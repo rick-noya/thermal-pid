@@ -6,7 +6,7 @@ from ui.app import SenxorApp
 import config
 
 def main():
-    camera = SenxorCamera(port=config.DEFAULT_PORT_CAM, stream_fps=config.STREAM_FPS)
+    camera = SenxorCamera(port=None, stream_fps=config.STREAM_FPS)
     siggen = SignalGenerator(port=config.DEFAULT_PORT_SIGGEN, baud=config.SIGGEN_BAUD, timeout=config.SIGGEN_TIMEOUT)
     pid    = TemperaturePID(**config.PID_DEFAULTS)
 

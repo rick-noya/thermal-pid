@@ -1,5 +1,7 @@
 import sys
 from senxor.utils import connect_senxor, data_to_frame
+import serial.tools.list_ports
+from senxor.interfaces import MI_VID, MI_PIDs
 
 
 class SenxorCamera:
@@ -11,7 +13,10 @@ class SenxorCamera:
     swap the camera implementation in the future.
     """
 
-    def __init__(self, port: str = "COM9", stream_fps: int = 15, *, with_header: bool = True):
+    def __init__(self, port: str = None, stream_fps: int = 15, *, with_header: bool = True):
+        # Auto-detect port if not specified or set to 'auto'
+        if not port or port.lower() == 'auto':
+            port = self._autodetect_port()
         self._port = port.upper() if port else None
         self._stream_fps = stream_fps
         self._with_header = with_header
@@ -21,6 +26,13 @@ class SenxorCamera:
 
         self._connect()
         self._configure()
+
+    def _autodetect_port(self):
+        # Try to find a port with a Senxor/MI48 device
+        for p in serial.tools.list_ports.comports():
+            if p.vid == MI_VID and p.pid in MI_PIDs:
+                return p.device
+        raise RuntimeError("No Senxor/MI48 camera detected on any COM port.")
 
     # ---------------------------------------------------------------------
     # Public helpers
