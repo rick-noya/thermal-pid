@@ -1,6 +1,60 @@
 import tkinter as tk
 from tkinter import ttk
 
+# Robust tooltip helper for Tkinter/ttk widgets
+class Tooltip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tipwindow = None
+        self.id = None
+        self.x = self.y = 0
+        widget.bind("<Enter>", self.enter)
+        widget.bind("<Leave>", self.leave)
+        widget.bind("<Motion>", self.motion)
+
+    def enter(self, event=None):
+        self.schedule()
+
+    def leave(self, event=None):
+        self.unschedule()
+        self.hidetip()
+
+    def motion(self, event):
+        self.x = event.x_root + 20
+        self.y = event.y_root + 10
+        if self.tipwindow:
+            self.tipwindow.wm_geometry(f"+{self.x}+{self.y}")
+
+    def schedule(self):
+        self.unschedule()
+        self.id = self.widget.after(500, self.showtip)
+
+    def unschedule(self):
+        id_ = self.id
+        self.id = None
+        if id_:
+            self.widget.after_cancel(id_)
+
+    def showtip(self):
+        if self.tipwindow or not self.text:
+            return
+        self.tipwindow = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(1)
+        tw.wm_geometry(f"+{self.x}+{self.y}")
+        label = tk.Label(
+            tw, text=self.text, justify='left',
+            background="#ffffe0", relief='solid', borderwidth=1,
+            font=("Segoe UI", 9)
+        )
+        label.pack(ipadx=4, ipady=2)
+
+    def hidetip(self):
+        tw = self.tipwindow
+        self.tipwindow = None
+        if tw:
+            tw.destroy()
+
 class ControlPanel(ttk.LabelFrame):
     def __init__(self, master, pid, siggen, set_status=None, **kwargs):
         super().__init__(master, text="PID & Signal Generator Control", **kwargs)
@@ -11,25 +65,44 @@ class ControlPanel(ttk.LabelFrame):
         # PID Controls
         ttk.Label(self, text="Setpoint (°C):").grid(row=0, column=0, sticky='e', padx=2, pady=2)
         self.setpoint_var = tk.DoubleVar(value=pid.setpoint)
-        ttk.Spinbox(self, from_=0, to=200, increment=0.5, textvariable=self.setpoint_var, width=6).grid(row=0, column=1, sticky='ew', padx=2, pady=2)
+        setpoint_spin = ttk.Spinbox(self, from_=0, to=200, increment=0.5, textvariable=self.setpoint_var, width=6)
+        setpoint_spin.grid(row=0, column=1, sticky='ew', padx=2, pady=2)
+        Tooltip(setpoint_spin, "Target temperature for PID control.")
 
         ttk.Label(self, text="Kp:").grid(row=0, column=2, sticky='e', padx=2, pady=2)
         self.kp_var = tk.DoubleVar(value=pid.Kp)
-        ttk.Spinbox(self, from_=0, to=10, increment=0.01, textvariable=self.kp_var, width=5).grid(row=0, column=3, sticky='ew', padx=2, pady=2)
+        kp_spin = ttk.Spinbox(self, from_=0, to=10, increment=0.01, textvariable=self.kp_var, width=5)
+        kp_spin.grid(row=0, column=3, sticky='ew', padx=2, pady=2)
+        Tooltip(kp_spin, "Proportional gain for PID controller.")
 
         ttk.Label(self, text="Ki:").grid(row=0, column=4, sticky='e', padx=2, pady=2)
         self.ki_var = tk.DoubleVar(value=pid.Ki)
-        ttk.Spinbox(self, from_=0, to=10, increment=0.01, textvariable=self.ki_var, width=5).grid(row=0, column=5, sticky='ew', padx=2, pady=2)
+        ki_spin = ttk.Spinbox(self, from_=0, to=10, increment=0.01, textvariable=self.ki_var, width=5)
+        ki_spin.grid(row=0, column=5, sticky='ew', padx=2, pady=2)
+        Tooltip(ki_spin, "Integral gain for PID controller.")
 
         ttk.Label(self, text="Kd:").grid(row=0, column=6, sticky='e', padx=2, pady=2)
         self.kd_var = tk.DoubleVar(value=pid.Kd)
-        ttk.Spinbox(self, from_=0, to=10, increment=0.01, textvariable=self.kd_var, width=5).grid(row=0, column=7, sticky='ew', padx=2, pady=2)
+        kd_spin = ttk.Spinbox(self, from_=0, to=10, increment=0.01, textvariable=self.kd_var, width=5)
+        kd_spin.grid(row=0, column=7, sticky='ew', padx=2, pady=2)
+        Tooltip(kd_spin, "Derivative gain for PID controller.")
 
-        ttk.Button(self, text="Update PID", command=self.update_pid).grid(row=0, column=8, padx=6, pady=2, sticky='ew')
+        update_btn = ttk.Button(self, text="Update PID", command=self.update_pid)
+        update_btn.grid(row=0, column=8, padx=6, pady=2, sticky='ew')
+        Tooltip(update_btn, "Apply the current PID parameters.")
+
         self.pid_enable_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(self, text="Enable PID", variable=self.pid_enable_var).grid(row=0, column=9, padx=2, pady=2, sticky='ew')
-        ttk.Button(self, text="Start", command=self.start_ramp).grid(row=0, column=10, padx=6, pady=2, sticky='ew')
-        ttk.Button(self, text="Stop", command=self.stop_all).grid(row=0, column=11, padx=6, pady=2, sticky='ew')
+        enable_chk = ttk.Checkbutton(self, text="Enable PID", variable=self.pid_enable_var)
+        enable_chk.grid(row=0, column=9, padx=2, pady=2, sticky='ew')
+        Tooltip(enable_chk, "Enable or disable PID control.")
+
+        start_btn = ttk.Button(self, text="Start", command=self.start_ramp)
+        start_btn.grid(row=0, column=10, padx=6, pady=2, sticky='ew')
+        Tooltip(start_btn, "Start PID control loop.")
+
+        stop_btn = ttk.Button(self, text="Stop", command=self.stop_all)
+        stop_btn.grid(row=0, column=11, padx=6, pady=2, sticky='ew')
+        Tooltip(stop_btn, "Stop PID control and set output to 0V.")
 
         # Signal Generator Controls
         sg_frame = ttk.LabelFrame(self, text="Signal Generator")
@@ -38,31 +111,69 @@ class ControlPanel(ttk.LabelFrame):
 
         ttk.Label(sg_frame, text="Port:").grid(row=0, column=0, sticky='e', padx=2, pady=2)
         self.sg_port_var = tk.StringVar(value=self.siggen._port)
-        ttk.Entry(sg_frame, textvariable=self.sg_port_var, width=10).grid(row=0, column=1, sticky='ew', padx=2, pady=2)
+        port_entry = ttk.Entry(sg_frame, textvariable=self.sg_port_var, width=10)
+        port_entry.grid(row=0, column=1, sticky='ew', padx=2, pady=2)
+        Tooltip(port_entry, "Serial port for the signal generator (e.g., COM8).")
+
         ttk.Label(sg_frame, text="Baud:").grid(row=0, column=2, sticky='e', padx=2, pady=2)
         self.sg_baud_var = tk.IntVar(value=self.siggen._baud)
-        ttk.Entry(sg_frame, textvariable=self.sg_baud_var, width=8).grid(row=0, column=3, sticky='ew', padx=2, pady=2)
-        ttk.Button(sg_frame, text="Open", command=self.open_serial).grid(row=0, column=4, padx=2, pady=2, sticky='ew')
-        ttk.Button(sg_frame, text="Close", command=self.close_serial).grid(row=0, column=5, padx=2, pady=2, sticky='ew')
+        baud_entry = ttk.Entry(sg_frame, textvariable=self.sg_baud_var, width=8)
+        baud_entry.grid(row=0, column=3, sticky='ew', padx=2, pady=2)
+        Tooltip(baud_entry, "Baud rate for the signal generator serial connection.")
+
+        open_btn = ttk.Button(sg_frame, text="Open", command=self.open_serial)
+        open_btn.grid(row=0, column=4, padx=2, pady=2, sticky='ew')
+        Tooltip(open_btn, "Open the serial port for the signal generator.")
+
+        close_btn = ttk.Button(sg_frame, text="Close", command=self.close_serial)
+        close_btn.grid(row=0, column=5, padx=2, pady=2, sticky='ew')
+        Tooltip(close_btn, "Close the serial port for the signal generator.")
 
         ttk.Label(sg_frame, text="Frequency (Hz):").grid(row=1, column=0, sticky='e', padx=2, pady=2)
         self.sg_freq_var = tk.DoubleVar(value=100000.0)
-        ttk.Spinbox(sg_frame, from_=0, to=100000, increment=1, textvariable=self.sg_freq_var, width=10).grid(row=1, column=1, sticky='ew', padx=2, pady=2)
-        ttk.Button(sg_frame, text="Set Frequency", command=self.set_frequency).grid(row=1, column=2, padx=2, pady=2, sticky='ew')
-        ttk.Button(sg_frame, text="-", command=self.decrease_freq, width=2).grid(row=1, column=3, padx=2, pady=2, sticky='ew')
-        ttk.Button(sg_frame, text="+", command=self.increase_freq, width=2).grid(row=1, column=4, padx=2, pady=2, sticky='ew')
+        freq_spin = ttk.Spinbox(sg_frame, from_=0, to=100000, increment=1, textvariable=self.sg_freq_var, width=10)
+        freq_spin.grid(row=1, column=1, sticky='ew', padx=2, pady=2)
+        Tooltip(freq_spin, "Set the output frequency in Hz.")
+
+        set_freq_btn = ttk.Button(sg_frame, text="Set Frequency", command=self.set_frequency)
+        set_freq_btn.grid(row=1, column=2, padx=2, pady=2, sticky='ew')
+        Tooltip(set_freq_btn, "Apply the frequency to the signal generator.")
+
+        minus_btn = ttk.Button(sg_frame, text="-", command=self.decrease_freq, width=2)
+        minus_btn.grid(row=1, column=3, padx=2, pady=2, sticky='ew')
+        Tooltip(minus_btn, "Decrease frequency by 100 Hz.")
+
+        plus_btn = ttk.Button(sg_frame, text="+", command=self.increase_freq, width=2)
+        plus_btn.grid(row=1, column=4, padx=2, pady=2, sticky='ew')
+        Tooltip(plus_btn, "Increase frequency by 100 Hz.")
 
         ttk.Label(sg_frame, text="Voltage (V):").grid(row=1, column=5, sticky='e', padx=2, pady=2)
         self.sg_voltage_var = tk.DoubleVar(value=1.0)
-        ttk.Spinbox(sg_frame, from_=0, to=10, increment=0.01, textvariable=self.sg_voltage_var, width=8).grid(row=1, column=6, sticky='ew', padx=2, pady=2)
-        ttk.Button(sg_frame, text="Set Voltage", command=self.set_voltage).grid(row=1, column=7, padx=2, pady=2, sticky='ew')
-        ttk.Button(sg_frame, text="Output ON", command=self.output_on).grid(row=1, column=8, padx=2, pady=2, sticky='ew')
-        ttk.Button(sg_frame, text="Output OFF", command=self.output_off).grid(row=1, column=9, padx=2, pady=2, sticky='ew')
+        volt_spin = ttk.Spinbox(sg_frame, from_=0, to=10, increment=0.01, textvariable=self.sg_voltage_var, width=8)
+        volt_spin.grid(row=1, column=6, sticky='ew', padx=2, pady=2)
+        Tooltip(volt_spin, "Set the output voltage in volts.")
+
+        set_volt_btn = ttk.Button(sg_frame, text="Set Voltage", command=self.set_voltage)
+        set_volt_btn.grid(row=1, column=7, padx=2, pady=2, sticky='ew')
+        Tooltip(set_volt_btn, "Apply the voltage to the signal generator.")
+
+        on_btn = ttk.Button(sg_frame, text="Output ON", command=self.output_on)
+        on_btn.grid(row=1, column=8, padx=2, pady=2, sticky='ew')
+        Tooltip(on_btn, "Enable the signal generator output.")
+
+        off_btn = ttk.Button(sg_frame, text="Output OFF", command=self.output_off)
+        off_btn.grid(row=1, column=9, padx=2, pady=2, sticky='ew')
+        Tooltip(off_btn, "Disable the signal generator output.")
 
         ttk.Label(sg_frame, text="Raw Cmd:").grid(row=2, column=0, sticky='e', padx=2, pady=2)
         self.sg_cmd_var = tk.StringVar()
-        ttk.Entry(sg_frame, textvariable=self.sg_cmd_var, width=20).grid(row=2, column=1, columnspan=3, sticky='ew', padx=2, pady=2)
-        ttk.Button(sg_frame, text="Send", command=self.send_cmd).grid(row=2, column=4, padx=2, pady=2, sticky='ew')
+        cmd_entry = ttk.Entry(sg_frame, textvariable=self.sg_cmd_var, width=20)
+        cmd_entry.grid(row=2, column=1, columnspan=3, sticky='ew', padx=2, pady=2)
+        Tooltip(cmd_entry, "Send a raw command string to the signal generator.")
+
+        send_btn = ttk.Button(sg_frame, text="Send", command=self.send_cmd)
+        send_btn.grid(row=2, column=4, padx=2, pady=2, sticky='ew')
+        Tooltip(send_btn, "Send the raw command to the signal generator.")
 
         # Make main frame responsive
         for i in range(12):

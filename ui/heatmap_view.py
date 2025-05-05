@@ -3,6 +3,7 @@ from tkinter import ttk
 from PIL import Image, ImageTk
 import numpy as np
 import cv2 as cv
+from collections import deque
 
 COLORMAPS = {
     'Jet': cv.COLORMAP_JET,
@@ -15,6 +16,30 @@ COLORMAPS = {
     'Twilight': cv.COLORMAP_TWILIGHT,
     'Turbo': cv.COLORMAP_TURBO,
 }
+
+# Simple tooltip helper for Tkinter widgets
+class Tooltip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tipwindow = None
+        widget.bind("<Enter>", self.show)
+        widget.bind("<Leave>", self.hide)
+    def show(self, event=None):
+        if self.tipwindow or not self.text:
+            return
+        x, y, cx, cy = self.widget.bbox("insert") if hasattr(self.widget, 'bbox') else (0,0,0,0)
+        x = x + self.widget.winfo_rootx() + 20
+        y = y + self.widget.winfo_rooty() + 20
+        self.tipwindow = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(1)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(tw, text=self.text, justify='left', background="#ffffe0", relief='solid', borderwidth=1, font=("Segoe UI", 9))
+        label.pack(ipadx=4, ipady=2)
+    def hide(self, event=None):
+        if self.tipwindow:
+            self.tipwindow.destroy()
+            self.tipwindow = None
 
 class HeatmapView(ttk.Frame):
     def __init__(self, master, camera, trend_graph=None, set_status=None, **kwargs):
@@ -47,30 +72,34 @@ class HeatmapView(ttk.Frame):
         self.hot_smooth_var = tk.DoubleVar(value=0.2)
         hot_slider = ttk.Scale(controls, from_=0.01, to=0.5, variable=self.hot_smooth_var, orient='horizontal', length=100)
         hot_slider.grid(row=0, column=1, sticky='ew', padx=2)
+        Tooltip(hot_slider, "Adjusts how much the hot spot overlay is smoothed over time.")
         ttk.Label(controls, text="Cold Smoothing:").grid(row=0, column=2, sticky='e')
         self.cold_smooth_var = tk.DoubleVar(value=0.2)
         cold_slider = ttk.Scale(controls, from_=0.01, to=0.5, variable=self.cold_smooth_var, orient='horizontal', length=100)
         cold_slider.grid(row=0, column=3, sticky='ew', padx=2)
+        Tooltip(cold_slider, "Adjusts how much the cold spot overlay is smoothed over time.")
 
         # Colormap selector
         ttk.Label(controls, text="Colormap:").grid(row=0, column=4, sticky='e')
         self.colormap_var = tk.StringVar(value='Jet')
         colormap_menu = ttk.OptionMenu(controls, self.colormap_var, 'Jet', *COLORMAPS.keys())
         colormap_menu.grid(row=0, column=5, sticky='ew', padx=2)
+        Tooltip(colormap_menu, "Select the color palette for the heatmap display.")
 
         # Snapshot button
         self.snapshot_btn = ttk.Button(controls, text="Save Snapshot", command=self.save_snapshot)
         self.snapshot_btn.grid(row=0, column=6, padx=8, sticky='ew')
+        Tooltip(self.snapshot_btn, "Save the current frame as a CSV file.")
 
-        # Smoothing state
-        self.hot_avg = None
-        self.cool_avg = None
+        # Hot/cold position history (deque for last 10)
+        self.hot_history = deque(maxlen=10)
+        self.cold_history = deque(maxlen=10)
 
         self.img_label.bind('<Configure>', self.on_img_label_resize)
+        Tooltip(self.img_label, "Live thermal image with hot/cold overlays. Drag the divider to resize.")
         self.update_image()
 
     def on_img_label_resize(self, event):
-        # Redraw the last frame at the new size
         w, h = event.width, event.height
         if w < 50 or h < 50:
             return
@@ -109,19 +138,14 @@ class HeatmapView(ttk.Frame):
         max_loc = np.unravel_index(np.argmax(frame), frame.shape)
         min_pixel = np.array([min_loc[1] * scale_x, min_loc[0] * scale_y])
         max_pixel = np.array([max_loc[1] * scale_x, max_loc[0] * scale_y])
-        # Smoothing
-        hot_alpha = self.hot_smooth_var.get()
-        cold_alpha = self.cold_smooth_var.get()
-        if self.hot_avg is None:
-            self.hot_avg = max_pixel.copy()
-        else:
-            self.hot_avg = (1 - hot_alpha) * self.hot_avg + hot_alpha * max_pixel
-        if self.cool_avg is None:
-            self.cool_avg = min_pixel.copy()
-        else:
-            self.cool_avg = (1 - cold_alpha) * self.cool_avg + cold_alpha * min_pixel
-        hot_pos = (int(self.hot_avg[0]), int(self.hot_avg[1]))
-        cool_pos = (int(self.cool_avg[0]), int(self.cool_avg[1]))
+        # Update history
+        self.hot_history.append(max_pixel)
+        self.cold_history.append(min_pixel)
+        # Use average of last 10
+        hot_avg = np.mean(self.hot_history, axis=0)
+        cold_avg = np.mean(self.cold_history, axis=0)
+        hot_pos = (int(hot_avg[0]), int(hot_avg[1]))
+        cool_pos = (int(cold_avg[0]), int(cold_avg[1]))
         # Draw overlays
         cv.circle(color, hot_pos, 8, (0,0,255), 2)
         cv.putText(color, f"{np.max(frame):.1f}C", (hot_pos[0]+10, hot_pos[1]-10), cv.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
