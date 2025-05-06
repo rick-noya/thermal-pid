@@ -16,7 +16,7 @@ from .utils import Tooltip # Import the shared Tooltip
 # --- Logging setup ---
 import logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.WARNING,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
     handlers=[logging.StreamHandler()]
 )
@@ -37,7 +37,6 @@ VOLTAGE_COLOR = '#FF8F00'  # Amber/Orange for voltage
 
 class TrendGraph(ttk.Frame):
     def __init__(self, master, set_status=None, style='Content.TFrame', **kwargs):
-        logger.info('Initializing TrendGraph')
         super().__init__(master, style=style, **kwargs)
         self.set_status = set_status or (lambda msg: None)
         
@@ -76,7 +75,6 @@ class TrendGraph(ttk.Frame):
         # Interactive elements
         self.interactive_vline = None
         self.interactive_annotation = None
-        logger.debug('TrendGraph interactive elements initialized to None')
 
         # Frame for canvas and toolbar
         plot_frame = ttk.Frame(self, style='Content.TFrame')
@@ -138,17 +136,14 @@ class TrendGraph(ttk.Frame):
         self.fig.autofmt_xdate() # Rotate date labels for better fit
 
         # Connect click event
-        logger.info('Connecting button_press_event to on_canvas_click')
         self.canvas.mpl_connect('button_press_event', self.on_canvas_click)
 
         self.after_id = self.after(self.update_interval, self.update_graph)
 
     def clear_interactive_elements(self):
-        logger.debug('Clearing interactive elements (vline and annotation)')
         if self.interactive_vline:
             try:
                 self.interactive_vline.remove()
-                logger.debug('Removed interactive_vline')
             except (ValueError, AttributeError) as e:
                 logger.warning(f'Failed to remove interactive_vline: {e}')
             self.interactive_vline = None
@@ -156,7 +151,6 @@ class TrendGraph(ttk.Frame):
         if self.interactive_annotation:
             try:
                 self.interactive_annotation.remove()
-                logger.debug('Removed interactive_annotation')
             except (ValueError, AttributeError) as e:
                 logger.warning(f'Failed to remove interactive_annotation: {e}')
             self.interactive_annotation = None
@@ -165,28 +159,20 @@ class TrendGraph(ttk.Frame):
         # self.canvas.draw_idle() # Typically called by the function that initiated the clear
 
     def on_canvas_click(self, event):
-        logger.info(f'Canvas clicked: event={event}')
-        logger.debug(f'self.ax: {repr(self.ax)}')
-        logger.debug(f'event.inaxes: {repr(event.inaxes)}')
         if event.inaxes is None:
-            logger.info('Click was outside any axes; ignoring.')
             return
         if event.inaxes != self.ax:
             logger.warning(f'Click was in a different axes than self.ax. Proceeding anyway. event.inaxes={repr(event.inaxes)}, self.ax={repr(self.ax)}')
         if not self.time_data:
-            logger.info('No time_data available; ignoring click.')
             return
 
         self.clear_interactive_elements()
 
         clicked_time_num = event.xdata
-        logger.debug(f'Clicked xdata (matplotlib date num): {clicked_time_num}')
         
         time_data_nums = mdates.date2num(self.time_data)
-        logger.debug(f'time_data_nums: {time_data_nums}')
 
         if not (time_data_nums.min() <= clicked_time_num <= time_data_nums.max()):
-            logger.info('Clicked outside data range; no action taken.')
             self.canvas.draw_idle()
             return
 
@@ -195,7 +181,6 @@ class TrendGraph(ttk.Frame):
             interp_min = np.interp(clicked_time_num, time_data_nums, self.min_data)
             interp_avg = np.interp(clicked_time_num, time_data_nums, self.avg_data)
             interp_volt = np.interp(clicked_time_num, time_data_nums, self.voltage_data)
-            logger.debug(f'Interpolated values: max={interp_max}, min={interp_min}, avg={interp_avg}, volt={interp_volt}')
         except Exception as e:
             logger.error(f'Interpolation failed: {e}')
             idx = (np.abs(time_data_nums - clicked_time_num)).argmin()
@@ -204,13 +189,10 @@ class TrendGraph(ttk.Frame):
             interp_min = self.min_data[idx]
             interp_avg = self.avg_data[idx]
             interp_volt = self.voltage_data[idx]
-            logger.info(f'Fallback to nearest point idx={idx}: max={interp_max}, min={interp_min}, avg={interp_avg}, volt={interp_volt}')
 
         clicked_time_dt = mdates.num2date(clicked_time_num, tz=self.PST)
-        logger.info(f'Clicked time (datetime): {clicked_time_dt}')
 
         self.interactive_vline = self.ax.axvline(clicked_time_dt, color='dimgray', linestyle='--', linewidth=1)
-        logger.debug('Drew interactive vertical line')
 
         annotation_text = (
             f"Time: {clicked_time_dt.strftime('%H:%M:%S')}\\n"
@@ -228,11 +210,9 @@ class TrendGraph(ttk.Frame):
             horizontalalignment='right',
             bbox=dict(boxstyle='round,pad=0.3', fc='ivory', alpha=0.85, ec='gray')
         )
-        logger.debug(f'Drew annotation: {annotation_text}')
         self.canvas.draw_idle()
 
     def on_timespan_change(self, event=None):
-        logger.info('Timespan changed; clearing interactive elements and updating graph.')
         self.clear_interactive_elements()
         self.current_time_span_seconds = self.time_span_options[self.time_span_var.get()]
         self.update_graph() # Redraw with new span
@@ -240,8 +220,6 @@ class TrendGraph(ttk.Frame):
             self.canvas.draw_idle()
 
     def add_point(self, max_temp, min_temp, avg_temp, voltage): # Added voltage parameter
-        logger.debug(f'Adding point: max={max_temp}, min={min_temp}, avg={avg_temp}, volt={voltage}')
-        # t = time.time() - self.start_time # Removed
         self.time_data.append(datetime.now(self.PST)) # Store current PST datetime
         self.max_data.append(max_temp)
         self.min_data.append(min_temp)
@@ -250,7 +228,6 @@ class TrendGraph(ttk.Frame):
 
     def update_graph(self):
         if not self.winfo_exists(): # Don't update if widget is destroyed
-            logger.debug('TrendGraph widget does not exist (winfo_exists is False)')
             return
             
         t_now_pst = datetime.now(self.PST)
@@ -315,14 +292,12 @@ class TrendGraph(ttk.Frame):
         self.after_id = self.after(self.update_interval, self.update_graph)
 
     def clear_data(self):
-        logger.info('Clearing all trend graph data and interactive elements.')
         self.clear_interactive_elements()
         self.time_data.clear()
         self.max_data.clear()
         self.min_data.clear()
         self.avg_data.clear()
         self.voltage_data.clear() # Clear voltage data
-        # self.start_time = time.time() # Removed
         self.update_graph() # Redraw empty graph, which will now set axes based on current time
         if self.interactive_vline or self.interactive_annotation:
             self.canvas.draw_idle()
