@@ -44,15 +44,16 @@ class HeatmapView(ttk.Frame):
         controls_frame = ttk.Frame(self, style='Content.TFrame', padding=(5,5))
         controls_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=5)
         # Configure columns for even spacing of control groups
-        controls_frame.columnconfigure(0, weight=1) # Smoothing label + slider group 1
-        controls_frame.columnconfigure(1, weight=1) # Smoothing label + slider group 2
-        controls_frame.columnconfigure(2, weight=0) # Sample Number (less weight, fixed size)
-        controls_frame.columnconfigure(3, weight=1) # Colormap label + optionmenu
-        controls_frame.columnconfigure(4, weight=1) # Snapshot button
+        controls_frame.columnconfigure(0, weight=1) # Smoothing Group (Hot)
+        controls_frame.columnconfigure(1, weight=1) # Smoothing Group (Cold) - Note: smoothing_group spans 2 cols
+        controls_frame.columnconfigure(2, weight=0) # Display Options Group
+        controls_frame.columnconfigure(3, weight=0) # Sample Number 
+        controls_frame.columnconfigure(4, weight=1) # Colormap 
+        controls_frame.columnconfigure(5, weight=0) # Snapshot button
 
         # Smoothing controls group
         smoothing_group = ttk.Frame(controls_frame, style='Content.TFrame')
-        smoothing_group.grid(row=0, column=0, columnspan=2, sticky='ew', padx=(0,10))
+        smoothing_group.grid(row=0, column=0, columnspan=2, sticky='ew', padx=(0,5)) # Spans 2 logical columns
         smoothing_group.columnconfigure(1, weight=1) # Slider 1
         smoothing_group.columnconfigure(3, weight=1) # Slider 2
 
@@ -73,9 +74,23 @@ class HeatmapView(ttk.Frame):
         self.cold_smooth_display = ttk.Label(smoothing_group, textvariable=self.cold_smooth_len_var, style='Content.TLabel', width=3)
         self.cold_smooth_display.grid(row=1, column=2, sticky='w', padx=2)
 
+        # Display Options Group (New)
+        display_options_group = ttk.Frame(controls_frame, style='Content.TFrame')
+        display_options_group.grid(row=0, column=2, sticky='w', padx=5, pady=2) # Placed after smoothing
+
+        self.show_hot_spot_var = tk.BooleanVar(value=True)
+        hot_spot_check = ttk.Checkbutton(display_options_group, text="Hot Spot", variable=self.show_hot_spot_var, command=self.redraw_last_frame_if_exists, style='Content.TCheckbutton')
+        hot_spot_check.grid(row=0, column=0, sticky='w', padx=2)
+        Tooltip(hot_spot_check, "Toggle visibility of the hot spot marker and temperature.")
+
+        self.show_cold_spot_var = tk.BooleanVar(value=True)
+        cold_spot_check = ttk.Checkbutton(display_options_group, text="Cold Spot", variable=self.show_cold_spot_var, command=self.redraw_last_frame_if_exists, style='Content.TCheckbutton')
+        cold_spot_check.grid(row=1, column=0, sticky='w', padx=2)
+        Tooltip(cold_spot_check, "Toggle visibility of the cold spot marker and temperature.")
+
         # Sample Number Input Group
         sample_info_group = ttk.Frame(controls_frame, style='Content.TFrame')
-        sample_info_group.grid(row=0, column=2, sticky='ew', padx=5)
+        sample_info_group.grid(row=0, column=3, sticky='ew', padx=5) # Shifted to column 3
         sample_info_group.columnconfigure(1, weight=1) # Entry expands
         ttk.Label(sample_info_group, text="Sample #:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=(5,2), pady=2)
         self.sample_number_var = tk.StringVar()
@@ -85,7 +100,7 @@ class HeatmapView(ttk.Frame):
 
         # Colormap selector group
         colormap_group = ttk.Frame(controls_frame, style='Content.TFrame')
-        colormap_group.grid(row=0, column=3, sticky='ew', padx=5) # Shifted to column 3
+        colormap_group.grid(row=0, column=4, sticky='ew', padx=5) # Shifted to column 4
         colormap_group.columnconfigure(1, weight=1)
         ttk.Label(colormap_group, text="Colormap:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=2, pady=2)
         self.colormap_var = tk.StringVar(value='Viridis') # Changed default to Viridis
@@ -95,7 +110,7 @@ class HeatmapView(ttk.Frame):
 
         # Snapshot button
         self.snapshot_btn = ttk.Button(controls_frame, text="Save Snapshot", command=self.save_snapshot)
-        self.snapshot_btn.grid(row=0, column=4, padx=10, pady=2, sticky='e') # Shifted to column 4
+        self.snapshot_btn.grid(row=0, column=5, padx=10, pady=2, sticky='e') # Shifted to column 5
         Tooltip(self.snapshot_btn, "Save the current thermal data as a CSV file and image.")
 
         # Hot/cold position history (deque for last N)
@@ -123,6 +138,10 @@ class HeatmapView(ttk.Frame):
         if not hasattr(self, 'cold_history') or self.cold_history.maxlen != new_cold_len:
             self.cold_history = deque(maxlen=new_cold_len)
         # self.set_status(f"Smoothing history set to: Hot {new_hot_len}, Cold {new_cold_len}")
+
+    def redraw_last_frame_if_exists(self):
+        if self.last_frame is not None:
+            self.render_frame(self.last_frame, size=self.last_render_size)
 
     def on_img_label_resize(self, event):
         allocated_w, allocated_h = event.width, event.height
@@ -196,36 +215,38 @@ class HeatmapView(ttk.Frame):
                 self.hot_history.append(max_pixel)
                 self.cold_history.append(min_pixel)
                 
-                if len(self.hot_history) > 0:
-                    hot_avg = np.mean(self.hot_history, axis=0)
-                    hot_pos = (int(hot_avg[0]), int(hot_avg[1]))
-                    # Draw outlined text for hot spot
-                    text_hot = f"{np.max(frame):.1f}0C"
-                    font_face = cv.FONT_HERSHEY_SIMPLEX
-                    font_scale = 0.6
-                    thickness_text = 1
-                    thickness_outline = 2
-                    text_color_fg = (255,255,255) # White
-                    text_color_bg = (0,0,0)     # Black
-                    (text_w, text_h), _ = cv.getTextSize(text_hot, font_face, font_scale, thickness_text)
-                    text_org_hot = (hot_pos[0] + 10, hot_pos[1] - 10)
-                    # Outline
-                    cv.putText(color_img, text_hot, text_org_hot, font_face, font_scale, text_color_bg, thickness_outline, cv.LINE_AA)
-                    # Foreground
-                    cv.putText(color_img, text_hot, text_org_hot, font_face, font_scale, text_color_fg, thickness_text, cv.LINE_AA)
-                    cv.circle(color_img, hot_pos, 8, (0,0,255), 2) # Red circle for hot
+                if self.show_hot_spot_var.get(): # Check visibility
+                    if len(self.hot_history) > 0:
+                        hot_avg = np.mean(self.hot_history, axis=0)
+                        hot_pos = (int(hot_avg[0]), int(hot_avg[1]))
+                        # Draw outlined text for hot spot
+                        text_hot = f"{np.max(frame):.1f}C" # Corrected: was .1f0C
+                        font_face = cv.FONT_HERSHEY_SIMPLEX
+                        font_scale = 0.6
+                        thickness_text = 1
+                        thickness_outline = 2
+                        text_color_fg = (255,255,255) # White
+                        text_color_bg = (0,0,0)     # Black
+                        (text_w, text_h), _ = cv.getTextSize(text_hot, font_face, font_scale, thickness_text)
+                        text_org_hot = (hot_pos[0] + 10, hot_pos[1] - 10)
+                        # Outline
+                        cv.putText(color_img, text_hot, text_org_hot, font_face, font_scale, text_color_bg, thickness_outline, cv.LINE_AA)
+                        # Foreground
+                        cv.putText(color_img, text_hot, text_org_hot, font_face, font_scale, text_color_fg, thickness_text, cv.LINE_AA)
+                        cv.circle(color_img, hot_pos, 8, (0,0,255), 2) # Red circle for hot
 
-                if len(self.cold_history) > 0:
-                    cold_avg = np.mean(self.cold_history, axis=0)
-                    cool_pos = (int(cold_avg[0]), int(cold_avg[1]))
-                    # Draw outlined text for cold spot
-                    text_cold = f"{np.min(frame):.1f}C"
-                    text_org_cold = (cool_pos[0] + 10, cool_pos[1] - 10)
-                    # Outline
-                    cv.putText(color_img, text_cold, text_org_cold, font_face, font_scale, text_color_bg, thickness_outline, cv.LINE_AA)
-                    # Foreground
-                    cv.putText(color_img, text_cold, text_org_cold, font_face, font_scale, text_color_fg, thickness_text, cv.LINE_AA)
-                    cv.circle(color_img, cool_pos, 8, (255,0,0), 2) # Blue circle for cold
+                if self.show_cold_spot_var.get(): # Check visibility
+                    if len(self.cold_history) > 0:
+                        cold_avg = np.mean(self.cold_history, axis=0)
+                        cool_pos = (int(cold_avg[0]), int(cold_avg[1]))
+                        # Draw outlined text for cold spot
+                        text_cold = f"{np.min(frame):.1f}C"
+                        text_org_cold = (cool_pos[0] + 10, cool_pos[1] - 10)
+                        # Outline
+                        cv.putText(color_img, text_cold, text_org_cold, font_face, font_scale, text_color_bg, thickness_outline, cv.LINE_AA)
+                        # Foreground
+                        cv.putText(color_img, text_cold, text_org_cold, font_face, font_scale, text_color_fg, thickness_text, cv.LINE_AA)
+                        cv.circle(color_img, cool_pos, 8, (255,0,0), 2) # Blue circle for cold
 
         img_rgb = cv.cvtColor(color_img, cv.COLOR_BGR2RGB)
         img_pil = Image.fromarray(img_rgb)
