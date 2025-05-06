@@ -7,6 +7,9 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import numpy as np
 import time
 import csv
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo # Requires Python 3.9+
+import matplotlib.dates as mdates
 from .utils import Tooltip # Import the shared Tooltip
 # import os # os was imported but not used
 
@@ -20,10 +23,21 @@ matplotlib.rcParams['xtick.labelsize'] = 9
 matplotlib.rcParams['ytick.labelsize'] = 9
 matplotlib.rcParams['legend.fontsize'] = 9
 
+# Define a second y-axis for voltage
+VOLTAGE_COLOR = '#FF8F00'  # Amber/Orange for voltage
+
 class TrendGraph(ttk.Frame):
     def __init__(self, master, set_status=None, style='Content.TFrame', **kwargs):
         super().__init__(master, style=style, **kwargs)
         self.set_status = set_status or (lambda msg: None)
+        
+        try:
+            self.PST = ZoneInfo("America/Los_Angeles")
+        except Exception as e:
+            # Fallback or error handling if zoneinfo is not available or invalid timezone
+            print(f"Error initializing timezone: {e}. Using UTC as fallback.")
+            self.PST = ZoneInfo("UTC")
+            self.set_status("Warning: Could not load PST. Using UTC for timestamps.")
 
         plt.style.use('seaborn-v0_8-whitegrid')
 
@@ -33,9 +47,21 @@ class TrendGraph(ttk.Frame):
         self.line_avg, = self.ax.plot([], [], color='#43A047', linestyle='--', linewidth=1.5, label='Avg Temp') # Green
         
         self.ax.set_ylabel('Temperature (°C)')
-        self.ax.set_xlabel('Time (s)')
-        self.ax.legend(loc='upper left')
-        self.ax.grid(True, linestyle=':', alpha=0.7)
+        self.ax.set_xlabel('Time (PST)') # Updated X-axis label
+        
+        # Create a second y-axis for voltage
+        self.ax2 = self.ax.twinx()
+        self.line_voltage, = self.ax2.plot([], [], color=VOLTAGE_COLOR, linestyle='-.', linewidth=1.5, label='Voltage (V)') # Amber/Orange
+        self.ax2.set_ylabel('Voltage (V)', color=VOLTAGE_COLOR)
+        self.ax2.tick_params(axis='y', labelcolor=VOLTAGE_COLOR)
+
+        # Combine legends from both axes
+        lines, labels = self.ax.get_legend_handles_labels()
+        lines2, labels2 = self.ax2.get_legend_handles_labels()
+        self.ax.legend(lines + lines2, labels + labels2, loc='upper left')
+        
+        self.ax.grid(True, linestyle=':', alpha=0.7) # Grid for primary axis
+        # self.ax2.grid(False) # No separate grid for voltage axis, or style if needed
         self.fig.tight_layout(pad=0.5) # Adjust layout to prevent overlap
 
         # Frame for canvas and toolbar
@@ -84,68 +110,95 @@ class TrendGraph(ttk.Frame):
                 child.pack_forget()
                 break
 
-        self.time_data = []
+        self.time_data = [] # Will store datetime objects
         self.max_data = []
         self.min_data = []
         self.avg_data = []
-        self.start_time = time.time()
+        self.voltage_data = [] # New list for voltage
+        # self.start_time = time.time() # Removed, using absolute datetime objects
         self.current_time_span_seconds = self.time_span_options[self.time_span_var.get()]
         self.update_interval = 500  # ms, graph updates less frequently than heatmap
+
+        # Configure X-axis to display time formatted in PST
+        self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S', tz=self.PST))
+        self.fig.autofmt_xdate() # Rotate date labels for better fit
+
         self.after_id = self.after(self.update_interval, self.update_graph)
 
     def on_timespan_change(self, event=None):
         self.current_time_span_seconds = self.time_span_options[self.time_span_var.get()]
         self.update_graph() # Redraw with new span
 
-    def add_point(self, max_temp, min_temp, avg_temp):
-        t = time.time() - self.start_time
-        self.time_data.append(t)
+    def add_point(self, max_temp, min_temp, avg_temp, voltage): # Added voltage parameter
+        # t = time.time() - self.start_time # Removed
+        self.time_data.append(datetime.now(self.PST)) # Store current PST datetime
         self.max_data.append(max_temp)
         self.min_data.append(min_temp)
         self.avg_data.append(avg_temp)
+        self.voltage_data.append(voltage) # Store voltage
 
     def update_graph(self):
         if not self.winfo_exists(): # Don't update if widget is destroyed
             return
             
-        t_now = time.time() - self.start_time
+        t_now_pst = datetime.now(self.PST)
 
         if self.current_time_span_seconds == -1: # All Data
-            plot_times = self.time_data
-            plot_max = self.max_data
-            plot_min = self.min_data
-            plot_avg = self.avg_data
+            plot_times = list(self.time_data) # Use a copy
+            plot_max = list(self.max_data)
+            plot_min = list(self.min_data)
+            plot_avg = list(self.avg_data)
+            plot_voltage = list(self.voltage_data)
         else:
-            t_min_display = t_now - self.current_time_span_seconds
-            # Filter data that falls within the current display window
-            # We need to find the first index that is >= t_min_display
+            display_window_start_time = t_now_pst - timedelta(seconds=self.current_time_span_seconds)
+            
             first_idx = 0
-            for i, ti in enumerate(self.time_data):
-                if ti >= t_min_display:
+            # Find the first data point that is within the current display window
+            # This loop ensures we only plot data that should be visible
+            for i, dt in enumerate(self.time_data):
+                if dt >= display_window_start_time:
                     first_idx = i
                     break
-            else: # If no data is recent enough (e.g. after clearing or pausing)
-                if self.time_data: # If there is old data, this means it is all too old
-                    first_idx = len(self.time_data) # Will result in empty lists below
+            else: # If all data is older than the display window start
+                first_idx = len(self.time_data) # Results in empty plot_lists if all data is too old
             
             plot_times = self.time_data[first_idx:]
             plot_max = self.max_data[first_idx:]
             plot_min = self.min_data[first_idx:]
             plot_avg = self.avg_data[first_idx:]
+            plot_voltage = self.voltage_data[first_idx:]
 
         self.line_max.set_data(plot_times, plot_max)
         self.line_min.set_data(plot_times, plot_min)
         self.line_avg.set_data(plot_times, plot_avg)
+        self.line_voltage.set_data(plot_times, plot_voltage) # Set voltage data
         
         self.ax.relim()
         self.ax.autoscale_view()
+        self.ax2.relim() # Relimit and autoscale the second axis
+        self.ax2.autoscale_view()
         
-        # Adjust x-axis limits for a smooth scrolling effect if not showing all data
-        if self.current_time_span_seconds != -1 and plot_times:
-            self.ax.set_xlim(max(0, t_now - self.current_time_span_seconds), t_now + max(1, 0.05 * self.current_time_span_seconds)) # Small buffer
-        elif not plot_times: # No data to plot
-             self.ax.set_xlim(0, self.current_time_span_seconds if self.current_time_span_seconds !=-1 else 60)
+        # Adjust x-axis limits for a smooth scrolling effect or fixed window
+        if plot_times:
+            if self.current_time_span_seconds != -1: # Scrolling window with data
+                x_min_dt = t_now_pst - timedelta(seconds=self.current_time_span_seconds)
+                # Add a small amount of future time to the x-axis for smoother scrolling appearance
+                future_buffer_seconds = max(self.update_interval / 1000.0 * 2, 0.05 * self.current_time_span_seconds)
+                x_max_dt = t_now_pst + timedelta(seconds=future_buffer_seconds)
+                self.ax.set_xlim(x_min_dt, x_max_dt)
+            else: # All data - autoscale handles it, but relim/autoscale_view already called.
+                  # If specifically "All Data" and plot_times is not empty, autoscale is fine.
+                  # self.ax.autoscale_view(True, True, True) # Ensure X is autoscaled
+                  pass # autoscale_view earlier should handle this for 'All Data' with points
+        else: # No data to plot, set a default window based on current time and span
+            display_span_seconds = self.current_time_span_seconds if self.current_time_span_seconds != -1 else 60
+            # Show a window ending slightly after 'now'
+            future_buffer_seconds_empty = self.update_interval / 1000.0 * 5 # A few update intervals
+            x_max_dt = t_now_pst + timedelta(seconds=future_buffer_seconds_empty)
+            x_min_dt = x_max_dt - timedelta(seconds=display_span_seconds)
+            self.ax.set_xlim(x_min_dt, x_max_dt)
 
+        self.fig.autofmt_xdate() # Ensure date labels are well-formatted
         self.canvas.draw()
         self.after_id = self.after(self.update_interval, self.update_graph)
 
@@ -154,8 +207,9 @@ class TrendGraph(ttk.Frame):
         self.max_data.clear()
         self.min_data.clear()
         self.avg_data.clear()
-        self.start_time = time.time() # Reset start time
-        self.update_graph() # Redraw empty graph
+        self.voltage_data.clear() # Clear voltage data
+        # self.start_time = time.time() # Removed
+        self.update_graph() # Redraw empty graph, which will now set axes based on current time
         self.set_status("Trend graph data cleared.")
 
     def export_csv(self):
@@ -167,9 +221,11 @@ class TrendGraph(ttk.Frame):
         try:
             with open(filename, 'w', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow(['Time (s)', 'Max Temp (C)', 'Min Temp (C)', 'Avg Temp (C)'])
-                for t, mx, mn, av in zip(self.time_data, self.max_data, self.min_data, self.avg_data):
-                    writer.writerow([t, mx, mn, av])
+                writer.writerow(['Timestamp (PST)', 'Max Temp (C)', 'Min Temp (C)', 'Avg Temp (C)', 'Voltage (V)']) # Updated header
+                for dt_obj, mx, mn, av, v in zip(self.time_data, self.max_data, self.min_data, self.avg_data, self.voltage_data):
+                    # Format datetime object to string including PST
+                    timestamp_str = dt_obj.strftime('%Y-%m-%d %H:%M:%S %Z')
+                    writer.writerow([timestamp_str, mx, mn, av, v]) # Write formatted timestamp
             self.set_status(f"Graph data exported to {filename}")
         except Exception as e:
             self.set_status(f"Export failed: {e}")

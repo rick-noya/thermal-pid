@@ -125,8 +125,11 @@ class HeatmapView(ttk.Frame):
             min_temp = np.min(frame)
             max_temp = np.max(frame)
             avg_temp = np.mean(frame)
-            if self.trend_graph is not None:
-                self.trend_graph.add_point(max_temp, min_temp, avg_temp)
+            if self.trend_graph:
+                # Add current hot, cold, and average temperatures to the trend graph
+                # TODO: Get actual voltage if available
+                current_voltage = 0.0 # Placeholder for voltage
+                self.trend_graph.add_point(max_temp, min_temp, avg_temp, current_voltage)
         self.after_id = self.after(self.update_interval, self.update_image)
 
     def render_frame(self, frame, size=(400, 310)):
@@ -159,7 +162,7 @@ class HeatmapView(ttk.Frame):
                     hot_avg = np.mean(self.hot_history, axis=0)
                     hot_pos = (int(hot_avg[0]), int(hot_avg[1]))
                     # Draw outlined text for hot spot
-                    text_hot = f"{np.max(frame):.1f}°C"
+                    text_hot = f"{np.max(frame):.1f}0C"
                     font_face = cv.FONT_HERSHEY_SIMPLEX
                     font_scale = 0.6
                     thickness_text = 1
@@ -178,7 +181,7 @@ class HeatmapView(ttk.Frame):
                     cold_avg = np.mean(self.cold_history, axis=0)
                     cool_pos = (int(cold_avg[0]), int(cold_avg[1]))
                     # Draw outlined text for cold spot
-                    text_cold = f"{np.min(frame):.1f}°C"
+                    text_cold = f"{np.min(frame):.1f}C"
                     text_org_cold = (cool_pos[0] + 10, cool_pos[1] - 10)
                     # Outline
                     cv.putText(color_img, text_cold, text_org_cold, font_face, font_scale, text_color_bg, thickness_outline, cv.LINE_AA)
