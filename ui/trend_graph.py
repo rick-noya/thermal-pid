@@ -212,12 +212,19 @@ class TrendGraph(ttk.Frame):
         self.update_graph() # Redraw empty graph, which will now set axes based on current time
         self.set_status("Trend graph data cleared.")
 
-    def export_csv(self):
+    def export_csv(self, sample_name: str | None = None):
         if not self.time_data:
             self.set_status("No data to export.")
             return
+        
         timestamp = time.strftime('%Y%m%d-%H%M%S')
-        filename = f"trend_{timestamp}.csv"
+        
+        if sample_name and sample_name.strip():
+            s_name = sample_name.strip().replace(" ", "_") # Sanitize for filename
+            filename = f"{s_name}_trend_{timestamp}.csv"
+        else:
+            filename = f"trend_{timestamp}.csv"
+
         try:
             with open(filename, 'w', newline='') as f:
                 writer = csv.writer(f)

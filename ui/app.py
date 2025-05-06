@@ -107,6 +107,9 @@ class SenxorApp(ttk.Frame):
 
         # Set initial PanedWindow sash position after widgets are drawn
         self.after(100, self.set_initial_pane_proportions)
+        
+        # Configure trend graph export to use sample name from heatmap view
+        self.trend_graph.export_btn.configure(command=self._export_trend_data_coordinated)
 
     def set_initial_pane_proportions(self):
         self.update_idletasks()
@@ -123,4 +126,12 @@ class SenxorApp(ttk.Frame):
         if hasattr(self, 'status_bar_view') and self.status_bar_view: # Check if it exists
             self.status_bar_view.set_status(msg)
         else: # Fallback if called before status_bar_view is initialized (should not happen in normal flow)
-            print(f"Status (early): {msg}") 
+            print(f"Status (early): {msg}")
+
+    def _export_trend_data_coordinated(self):
+        sample_name = ""
+        if hasattr(self, 'heatmap_view') and self.heatmap_view:
+            sample_name = self.heatmap_view.get_sample_number()
+        
+        if hasattr(self, 'trend_graph') and self.trend_graph:
+            self.trend_graph.export_csv(sample_name=sample_name) 

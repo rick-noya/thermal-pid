@@ -42,8 +42,9 @@ class HeatmapView(ttk.Frame):
         # Configure columns for even spacing of control groups
         controls_frame.columnconfigure(0, weight=1) # Smoothing label + slider group 1
         controls_frame.columnconfigure(1, weight=1) # Smoothing label + slider group 2
-        controls_frame.columnconfigure(2, weight=1) # Colormap label + optionmenu
-        controls_frame.columnconfigure(3, weight=1) # Snapshot button
+        controls_frame.columnconfigure(2, weight=0) # Sample Number (less weight, fixed size)
+        controls_frame.columnconfigure(3, weight=1) # Colormap label + optionmenu
+        controls_frame.columnconfigure(4, weight=1) # Snapshot button
 
         # Smoothing controls group
         smoothing_group = ttk.Frame(controls_frame, style='Content.TFrame')
@@ -68,9 +69,19 @@ class HeatmapView(ttk.Frame):
         self.cold_smooth_display = ttk.Label(smoothing_group, textvariable=self.cold_smooth_len_var, style='Content.TLabel', width=3)
         self.cold_smooth_display.grid(row=1, column=2, sticky='w', padx=2)
 
+        # Sample Number Input Group
+        sample_info_group = ttk.Frame(controls_frame, style='Content.TFrame')
+        sample_info_group.grid(row=0, column=2, sticky='ew', padx=5)
+        sample_info_group.columnconfigure(1, weight=1) # Entry expands
+        ttk.Label(sample_info_group, text="Sample #:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=(5,2), pady=2)
+        self.sample_number_var = tk.StringVar()
+        sample_entry = ttk.Entry(sample_info_group, textvariable=self.sample_number_var, width=10)
+        sample_entry.grid(row=0, column=1, sticky='ew', padx=(0,5), pady=2)
+        Tooltip(sample_entry, "Enter the sample identifier for this test run.")
+
         # Colormap selector group
         colormap_group = ttk.Frame(controls_frame, style='Content.TFrame')
-        colormap_group.grid(row=0, column=2, sticky='ew', padx=5)
+        colormap_group.grid(row=0, column=3, sticky='ew', padx=5) # Shifted to column 3
         colormap_group.columnconfigure(1, weight=1)
         ttk.Label(colormap_group, text="Colormap:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=2, pady=2)
         self.colormap_var = tk.StringVar(value='Viridis') # Changed default to Viridis
@@ -80,7 +91,7 @@ class HeatmapView(ttk.Frame):
 
         # Snapshot button
         self.snapshot_btn = ttk.Button(controls_frame, text="Save Snapshot", command=self.save_snapshot)
-        self.snapshot_btn.grid(row=0, column=3, padx=10, pady=2, sticky='e')
+        self.snapshot_btn.grid(row=0, column=4, padx=10, pady=2, sticky='e') # Shifted to column 4
         Tooltip(self.snapshot_btn, "Save the current thermal data as a CSV file and image.")
 
         # Hot/cold position history (deque for last N)
@@ -90,6 +101,9 @@ class HeatmapView(ttk.Frame):
         self.img_label.bind('<Configure>', self.on_img_label_resize)
         Tooltip(self.img_label, "Live thermal image. Drag the window divider to resize.")
         self.update_image()
+
+    def get_sample_number(self) -> str:
+        return self.sample_number_var.get().strip()
 
     def on_smooth_len_change(self, value=None): # Value from scale is string, convert if needed
         # Recreate deques with new maxlen
@@ -199,7 +213,13 @@ class HeatmapView(ttk.Frame):
         if self.last_frame is not None:
             import time
             timestamp = time.strftime('%Y%m%d-%H%M%S')
-            base_filename = f"snapshot_{timestamp}"
+            sample_name = self.get_sample_number()
+            
+            if sample_name:
+                base_filename = f"{sample_name}_snapshot_{timestamp}"
+            else:
+                base_filename = f"snapshot_{timestamp}"
+            
             csv_filename = f"{base_filename}.csv"
             img_filename = f"{base_filename}.png"
 
