@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 import matplotlib
-matplotlib.use('Agg') # Keep Agg for safety, FigureCanvasTkAgg handles Tk embedding
+# matplotlib.use('Agg') # Keep Agg for safety, FigureCanvasTkAgg handles Tk embedding
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import numpy as np
@@ -12,6 +12,15 @@ from zoneinfo import ZoneInfo # Requires Python 3.9+
 import matplotlib.dates as mdates
 from .utils import Tooltip # Import the shared Tooltip
 # import os # os was imported but not used
+
+# --- Logging setup ---
+import logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
 
 # Default font for matplotlib to match app style
 MPL_FONT_FAMILY = 'Segoe UI'
@@ -28,14 +37,14 @@ VOLTAGE_COLOR = '#FF8F00'  # Amber/Orange for voltage
 
 class TrendGraph(ttk.Frame):
     def __init__(self, master, set_status=None, style='Content.TFrame', **kwargs):
+        logger.info('Initializing TrendGraph')
         super().__init__(master, style=style, **kwargs)
         self.set_status = set_status or (lambda msg: None)
         
         try:
             self.PST = ZoneInfo("America/Los_Angeles")
         except Exception as e:
-            # Fallback or error handling if zoneinfo is not available or invalid timezone
-            print(f"Error initializing timezone: {e}. Using UTC as fallback.")
+            logger.warning(f"Error initializing timezone: {e}. Using UTC as fallback.")
             self.PST = ZoneInfo("UTC")
             self.set_status("Warning: Could not load PST. Using UTC for timestamps.")
 
@@ -63,6 +72,11 @@ class TrendGraph(ttk.Frame):
         self.ax.grid(True, linestyle=':', alpha=0.7) # Grid for primary axis
         # self.ax2.grid(False) # No separate grid for voltage axis, or style if needed
         self.fig.tight_layout(pad=0.5) # Adjust layout to prevent overlap
+
+        # Interactive elements
+        self.interactive_vline = None
+        self.interactive_annotation = None
+        logger.debug('TrendGraph interactive elements initialized to None')
 
         # Frame for canvas and toolbar
         plot_frame = ttk.Frame(self, style='Content.TFrame')
@@ -123,13 +137,110 @@ class TrendGraph(ttk.Frame):
         self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S', tz=self.PST))
         self.fig.autofmt_xdate() # Rotate date labels for better fit
 
+        # Connect click event
+        logger.info('Connecting button_press_event to on_canvas_click')
+        self.canvas.mpl_connect('button_press_event', self.on_canvas_click)
+
         self.after_id = self.after(self.update_interval, self.update_graph)
 
+    def clear_interactive_elements(self):
+        logger.debug('Clearing interactive elements (vline and annotation)')
+        if self.interactive_vline:
+            try:
+                self.interactive_vline.remove()
+                logger.debug('Removed interactive_vline')
+            except (ValueError, AttributeError) as e:
+                logger.warning(f'Failed to remove interactive_vline: {e}')
+            self.interactive_vline = None
+        
+        if self.interactive_annotation:
+            try:
+                self.interactive_annotation.remove()
+                logger.debug('Removed interactive_annotation')
+            except (ValueError, AttributeError) as e:
+                logger.warning(f'Failed to remove interactive_annotation: {e}')
+            self.interactive_annotation = None
+        
+        # Check if canvas needs redraw after removing elements
+        # self.canvas.draw_idle() # Typically called by the function that initiated the clear
+
+    def on_canvas_click(self, event):
+        logger.info(f'Canvas clicked: event={event}')
+        logger.debug(f'self.ax: {repr(self.ax)}')
+        logger.debug(f'event.inaxes: {repr(event.inaxes)}')
+        if event.inaxes is None:
+            logger.info('Click was outside any axes; ignoring.')
+            return
+        if event.inaxes != self.ax:
+            logger.warning(f'Click was in a different axes than self.ax. Proceeding anyway. event.inaxes={repr(event.inaxes)}, self.ax={repr(self.ax)}')
+        if not self.time_data:
+            logger.info('No time_data available; ignoring click.')
+            return
+
+        self.clear_interactive_elements()
+
+        clicked_time_num = event.xdata
+        logger.debug(f'Clicked xdata (matplotlib date num): {clicked_time_num}')
+        
+        time_data_nums = mdates.date2num(self.time_data)
+        logger.debug(f'time_data_nums: {time_data_nums}')
+
+        if not (time_data_nums.min() <= clicked_time_num <= time_data_nums.max()):
+            logger.info('Clicked outside data range; no action taken.')
+            self.canvas.draw_idle()
+            return
+
+        try:
+            interp_max = np.interp(clicked_time_num, time_data_nums, self.max_data)
+            interp_min = np.interp(clicked_time_num, time_data_nums, self.min_data)
+            interp_avg = np.interp(clicked_time_num, time_data_nums, self.avg_data)
+            interp_volt = np.interp(clicked_time_num, time_data_nums, self.voltage_data)
+            logger.debug(f'Interpolated values: max={interp_max}, min={interp_min}, avg={interp_avg}, volt={interp_volt}')
+        except Exception as e:
+            logger.error(f'Interpolation failed: {e}')
+            idx = (np.abs(time_data_nums - clicked_time_num)).argmin()
+            clicked_time_num = time_data_nums[idx]
+            interp_max = self.max_data[idx]
+            interp_min = self.min_data[idx]
+            interp_avg = self.avg_data[idx]
+            interp_volt = self.voltage_data[idx]
+            logger.info(f'Fallback to nearest point idx={idx}: max={interp_max}, min={interp_min}, avg={interp_avg}, volt={interp_volt}')
+
+        clicked_time_dt = mdates.num2date(clicked_time_num, tz=self.PST)
+        logger.info(f'Clicked time (datetime): {clicked_time_dt}')
+
+        self.interactive_vline = self.ax.axvline(clicked_time_dt, color='dimgray', linestyle='--', linewidth=1)
+        logger.debug('Drew interactive vertical line')
+
+        annotation_text = (
+            f"Time: {clicked_time_dt.strftime('%H:%M:%S')}\\n"
+            f"Max: {interp_max:.2f}°C\\n"
+            f"Min: {interp_min:.2f}°C\\n"
+            f"Avg: {interp_avg:.2f}°C\\n"
+            f"Volt: {interp_volt:.2f}V"
+        )
+        self.interactive_annotation = self.ax.text(
+            0.98, 0.98, 
+            annotation_text, 
+            transform=self.ax.transAxes, 
+            fontsize=8, 
+            verticalalignment='top', 
+            horizontalalignment='right',
+            bbox=dict(boxstyle='round,pad=0.3', fc='ivory', alpha=0.85, ec='gray')
+        )
+        logger.debug(f'Drew annotation: {annotation_text}')
+        self.canvas.draw_idle()
+
     def on_timespan_change(self, event=None):
+        logger.info('Timespan changed; clearing interactive elements and updating graph.')
+        self.clear_interactive_elements()
         self.current_time_span_seconds = self.time_span_options[self.time_span_var.get()]
         self.update_graph() # Redraw with new span
+        if self.interactive_vline or self.interactive_annotation:
+            self.canvas.draw_idle()
 
     def add_point(self, max_temp, min_temp, avg_temp, voltage): # Added voltage parameter
+        logger.debug(f'Adding point: max={max_temp}, min={min_temp}, avg={avg_temp}, volt={voltage}')
         # t = time.time() - self.start_time # Removed
         self.time_data.append(datetime.now(self.PST)) # Store current PST datetime
         self.max_data.append(max_temp)
@@ -139,6 +250,7 @@ class TrendGraph(ttk.Frame):
 
     def update_graph(self):
         if not self.winfo_exists(): # Don't update if widget is destroyed
+            logger.debug('TrendGraph widget does not exist (winfo_exists is False)')
             return
             
         t_now_pst = datetime.now(self.PST)
@@ -203,6 +315,8 @@ class TrendGraph(ttk.Frame):
         self.after_id = self.after(self.update_interval, self.update_graph)
 
     def clear_data(self):
+        logger.info('Clearing all trend graph data and interactive elements.')
+        self.clear_interactive_elements()
         self.time_data.clear()
         self.max_data.clear()
         self.min_data.clear()
@@ -210,6 +324,8 @@ class TrendGraph(ttk.Frame):
         self.voltage_data.clear() # Clear voltage data
         # self.start_time = time.time() # Removed
         self.update_graph() # Redraw empty graph, which will now set axes based on current time
+        if self.interactive_vline or self.interactive_annotation:
+            self.canvas.draw_idle()
         self.set_status("Trend graph data cleared.")
 
     def export_csv(self, sample_name: str | None = None):
