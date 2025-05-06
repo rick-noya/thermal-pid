@@ -1,202 +1,256 @@
 import tkinter as tk
 from tkinter import ttk
-
-# Robust tooltip helper for Tkinter/ttk widgets
-class Tooltip:
-    def __init__(self, widget, text):
-        self.widget = widget
-        self.text = text
-        self.tipwindow = None
-        self.id = None
-        self.x = self.y = 0
-        widget.bind("<Enter>", self.enter)
-        widget.bind("<Leave>", self.leave)
-        widget.bind("<Motion>", self.motion)
-
-    def enter(self, event=None):
-        self.schedule()
-
-    def leave(self, event=None):
-        self.unschedule()
-        self.hidetip()
-
-    def motion(self, event):
-        self.x = event.x_root + 20
-        self.y = event.y_root + 10
-        if self.tipwindow:
-            self.tipwindow.wm_geometry(f"+{self.x}+{self.y}")
-
-    def schedule(self):
-        self.unschedule()
-        self.id = self.widget.after(500, self.showtip)
-
-    def unschedule(self):
-        id_ = self.id
-        self.id = None
-        if id_:
-            self.widget.after_cancel(id_)
-
-    def showtip(self):
-        if self.tipwindow or not self.text:
-            return
-        self.tipwindow = tw = tk.Toplevel(self.widget)
-        tw.wm_overrideredirect(1)
-        tw.wm_geometry(f"+{self.x}+{self.y}")
-        label = tk.Label(
-            tw, text=self.text, justify='left',
-            background="#ffffe0", relief='solid', borderwidth=1,
-            font=("Segoe UI", 9)
-        )
-        label.pack(ipadx=4, ipady=2)
-
-    def hidetip(self):
-        tw = self.tipwindow
-        self.tipwindow = None
-        if tw:
-            tw.destroy()
+from .utils import Tooltip
 
 class ControlPanel(ttk.LabelFrame):
-    def __init__(self, master, pid, siggen, set_status=None, **kwargs):
-        super().__init__(master, text="PID & Signal Generator Control", **kwargs)
+    def __init__(self, master, pid, siggen, set_status=None, style='TLabelframe', **kwargs):
+        super().__init__(master, text="PID & Signal Generator Control", style=style, **kwargs)
         self.pid = pid
         self.siggen = siggen
         self.set_status = set_status or (lambda msg: None)
+        self.columnconfigure(0, weight=1) # Make the main frame responsive
 
-        # PID Controls
-        ttk.Label(self, text="Setpoint (°C):").grid(row=0, column=0, sticky='e', padx=2, pady=2)
+        # --- PID Controls Section ---
+        pid_frame = ttk.Frame(self, padding=(5,5), style='Content.TFrame') # Use Content.TFrame if TLabelframe bg is different
+        pid_frame.grid(row=0, column=0, sticky='ew', padx=5, pady=5)
+        # pid_frame.columnconfigure(tuple(range(4)), weight=1) # Distribute space within PID frame
+
+        # Row 0: Setpoint
+        ttk.Label(pid_frame, text="Setpoint (°C):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
         self.setpoint_var = tk.DoubleVar(value=pid.setpoint)
-        setpoint_spin = ttk.Spinbox(self, from_=0, to=200, increment=0.5, textvariable=self.setpoint_var, width=6)
-        setpoint_spin.grid(row=0, column=1, sticky='ew', padx=2, pady=2)
-        Tooltip(setpoint_spin, "Target temperature for PID control.")
+        self.setpoint_spin = ttk.Spinbox(pid_frame, from_=0, to=200, increment=0.5, textvariable=self.setpoint_var, width=8)
+        self.setpoint_spin.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
+        Tooltip(self.setpoint_spin, "Target temperature for PID control.")
 
-        ttk.Label(self, text="Kp:").grid(row=0, column=2, sticky='e', padx=2, pady=2)
+        # Row 1: PID Gains (Kp, Ki, Kd)
+        gains_frame = ttk.Frame(pid_frame, style='Content.TFrame')
+        gains_frame.grid(row=1, column=0, columnspan=4, sticky='ew', pady=5)
+
+        ttk.Label(gains_frame, text="Kp:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=2)
         self.kp_var = tk.DoubleVar(value=pid.Kp)
-        kp_spin = ttk.Spinbox(self, from_=0, to=10, increment=0.01, textvariable=self.kp_var, width=5)
-        kp_spin.grid(row=0, column=3, sticky='ew', padx=2, pady=2)
-        Tooltip(kp_spin, "Proportional gain for PID controller.")
+        self.kp_spin = ttk.Spinbox(gains_frame, from_=0, to=100, increment=0.01, textvariable=self.kp_var, width=7)
+        self.kp_spin.grid(row=0, column=1, sticky='ew', padx=5, pady=2)
+        Tooltip(self.kp_spin, "Proportional gain for PID controller.")
 
-        ttk.Label(self, text="Ki:").grid(row=0, column=4, sticky='e', padx=2, pady=2)
+        ttk.Label(gains_frame, text="Ki:", style='Content.TLabel').grid(row=0, column=2, sticky='w', padx=5, pady=2)
         self.ki_var = tk.DoubleVar(value=pid.Ki)
-        ki_spin = ttk.Spinbox(self, from_=0, to=10, increment=0.01, textvariable=self.ki_var, width=5)
-        ki_spin.grid(row=0, column=5, sticky='ew', padx=2, pady=2)
-        Tooltip(ki_spin, "Integral gain for PID controller.")
+        self.ki_spin = ttk.Spinbox(gains_frame, from_=0, to=100, increment=0.01, textvariable=self.ki_var, width=7)
+        self.ki_spin.grid(row=0, column=3, sticky='ew', padx=5, pady=2)
+        Tooltip(self.ki_spin, "Integral gain for PID controller.")
 
-        ttk.Label(self, text="Kd:").grid(row=0, column=6, sticky='e', padx=2, pady=2)
+        ttk.Label(gains_frame, text="Kd:", style='Content.TLabel').grid(row=0, column=4, sticky='w', padx=5, pady=2)
         self.kd_var = tk.DoubleVar(value=pid.Kd)
-        kd_spin = ttk.Spinbox(self, from_=0, to=10, increment=0.01, textvariable=self.kd_var, width=5)
-        kd_spin.grid(row=0, column=7, sticky='ew', padx=2, pady=2)
-        Tooltip(kd_spin, "Derivative gain for PID controller.")
+        self.kd_spin = ttk.Spinbox(gains_frame, from_=0, to=100, increment=0.01, textvariable=self.kd_var, width=7)
+        self.kd_spin.grid(row=0, column=5, sticky='ew', padx=5, pady=2)
+        Tooltip(self.kd_spin, "Derivative gain for PID controller.")
+        for i in range(6): gains_frame.columnconfigure(i, weight=1, uniform="gains")
 
-        update_btn = ttk.Button(self, text="Update PID", command=self.update_pid)
-        update_btn.grid(row=0, column=8, padx=6, pady=2, sticky='ew')
-        Tooltip(update_btn, "Apply the current PID parameters.")
+        # Row 2: PID Actions
+        actions_frame = ttk.Frame(pid_frame, style='Content.TFrame')
+        actions_frame.grid(row=2, column=0, columnspan=4, sticky='ew', pady=5)
+
+        self.update_pid_btn = ttk.Button(actions_frame, text="Update PID", command=self.update_pid)
+        self.update_pid_btn.grid(row=0, column=0, padx=5, pady=2, sticky='ew')
+        Tooltip(self.update_pid_btn, "Apply the current PID parameters.")
 
         self.pid_enable_var = tk.BooleanVar(value=True)
-        enable_chk = ttk.Checkbutton(self, text="Enable PID", variable=self.pid_enable_var)
-        enable_chk.grid(row=0, column=9, padx=2, pady=2, sticky='ew')
-        Tooltip(enable_chk, "Enable or disable PID control.")
+        self.enable_pid_chk = ttk.Checkbutton(actions_frame, text="Enable PID", variable=self.pid_enable_var, command=self.toggle_pid_controls)
+        self.enable_pid_chk.grid(row=0, column=1, padx=5, pady=2, sticky='w')
+        Tooltip(self.enable_pid_chk, "Enable or disable PID control.")
 
-        start_btn = ttk.Button(self, text="Start", command=self.start_ramp)
-        start_btn.grid(row=0, column=10, padx=6, pady=2, sticky='ew')
-        Tooltip(start_btn, "Start PID control loop.")
+        self.start_pid_btn = ttk.Button(actions_frame, text="Start PID", command=self.start_ramp, style='Primary.TButton')
+        self.start_pid_btn.grid(row=0, column=2, padx=5, pady=2, sticky='ew')
+        Tooltip(self.start_pid_btn, "Start PID control loop.")
 
-        stop_btn = ttk.Button(self, text="Stop", command=self.stop_all)
-        stop_btn.grid(row=0, column=11, padx=6, pady=2, sticky='ew')
-        Tooltip(stop_btn, "Stop PID control and set output to 0V.")
+        self.stop_pid_btn = ttk.Button(actions_frame, text="Stop PID", command=self.stop_all)
+        self.stop_pid_btn.grid(row=0, column=3, padx=5, pady=2, sticky='ew')
+        Tooltip(self.stop_pid_btn, "Stop PID control and set output to 0V.")
+        for i in range(4): actions_frame.columnconfigure(i, weight=1, uniform="actions")
+        pid_frame.columnconfigure(0, weight=1)
+        pid_frame.columnconfigure(1, weight=2) # Spinbox gets more space
 
-        # Signal Generator Controls
-        sg_frame = ttk.LabelFrame(self, text="Signal Generator")
-        sg_frame.grid(row=1, column=0, columnspan=12, sticky='ew', padx=2, pady=(8,2))
-        sg_frame.columnconfigure(tuple(range(10)), weight=1)
+        # --- Signal Generator Controls Section ---
+        sg_frame = ttk.LabelFrame(self, text="Signal Generator", style='TLabelframe', padding=(5,5))
+        sg_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=(10,5))
+        sg_frame.columnconfigure(tuple(range(6)), weight=1, uniform="sg_uniform") # Allow responsive columns
 
-        ttk.Label(sg_frame, text="Port:").grid(row=0, column=0, sticky='e', padx=2, pady=2)
-        self.sg_port_var = tk.StringVar(value=self.siggen._port)
-        port_entry = ttk.Entry(sg_frame, textvariable=self.sg_port_var, width=10)
-        port_entry.grid(row=0, column=1, sticky='ew', padx=2, pady=2)
-        Tooltip(port_entry, "Serial port for the signal generator (e.g., COM8).")
+        # Connection part
+        ttk.Label(sg_frame, text="Port:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        self.sg_port_var = tk.StringVar(value=self.siggen._port if self.siggen._port else "COM3")
+        self.port_entry = ttk.Entry(sg_frame, textvariable=self.sg_port_var, width=12)
+        self.port_entry.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
+        Tooltip(self.port_entry, "Serial port for the signal generator (e.g., COM8 or /dev/ttyUSB0).")
 
-        ttk.Label(sg_frame, text="Baud:").grid(row=0, column=2, sticky='e', padx=2, pady=2)
-        self.sg_baud_var = tk.IntVar(value=self.siggen._baud)
-        baud_entry = ttk.Entry(sg_frame, textvariable=self.sg_baud_var, width=8)
-        baud_entry.grid(row=0, column=3, sticky='ew', padx=2, pady=2)
-        Tooltip(baud_entry, "Baud rate for the signal generator serial connection.")
+        ttk.Label(sg_frame, text="Baud:", style='Content.TLabel').grid(row=0, column=2, sticky='w', padx=5, pady=5)
+        self.sg_baud_var = tk.IntVar(value=self.siggen._baud if self.siggen._baud else 9600)
+        self.baud_entry = ttk.Entry(sg_frame, textvariable=self.sg_baud_var, width=10)
+        self.baud_entry.grid(row=0, column=3, sticky='ew', padx=5, pady=5)
+        Tooltip(self.baud_entry, "Baud rate for the signal generator serial connection.")
 
-        open_btn = ttk.Button(sg_frame, text="Open", command=self.open_serial)
-        open_btn.grid(row=0, column=4, padx=2, pady=2, sticky='ew')
-        Tooltip(open_btn, "Open the serial port for the signal generator.")
+        self.open_serial_btn = ttk.Button(sg_frame, text="Open", command=self.open_serial)
+        self.open_serial_btn.grid(row=0, column=4, padx=5, pady=5, sticky='ew')
+        Tooltip(self.open_serial_btn, "Open the serial port for the signal generator.")
 
-        close_btn = ttk.Button(sg_frame, text="Close", command=self.close_serial)
-        close_btn.grid(row=0, column=5, padx=2, pady=2, sticky='ew')
-        Tooltip(close_btn, "Close the serial port for the signal generator.")
+        self.close_serial_btn = ttk.Button(sg_frame, text="Close", command=self.close_serial, state='disabled')
+        self.close_serial_btn.grid(row=0, column=5, padx=5, pady=5, sticky='ew')
+        Tooltip(self.close_serial_btn, "Close the serial port for the signal generator.")
 
-        ttk.Label(sg_frame, text="Frequency (Hz):").grid(row=1, column=0, sticky='e', padx=2, pady=2)
+        # Settings part (initially disabled)
+        self.sg_settings_frame = ttk.Frame(sg_frame, style='Content.TFrame')
+        self.sg_settings_frame.grid(row=1, column=0, columnspan=6, sticky='ew', pady=5)
+        self.sg_settings_frame.columnconfigure(tuple(range(8)), weight=1, uniform="sg_settings")
+
+        ttk.Label(self.sg_settings_frame, text="Frequency (Hz):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
         self.sg_freq_var = tk.DoubleVar(value=100000.0)
-        freq_spin = ttk.Spinbox(sg_frame, from_=0, to=100000, increment=1, textvariable=self.sg_freq_var, width=10)
-        freq_spin.grid(row=1, column=1, sticky='ew', padx=2, pady=2)
-        Tooltip(freq_spin, "Set the output frequency in Hz.")
+        self.freq_spin = ttk.Spinbox(self.sg_settings_frame, from_=0, to=1000000, increment=100, textvariable=self.sg_freq_var, width=10)
+        self.freq_spin.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
+        Tooltip(self.freq_spin, "Set the output frequency in Hz.")
+        self.set_freq_btn = ttk.Button(self.sg_settings_frame, text="Set Freq", command=self.set_frequency)
+        self.set_freq_btn.grid(row=0, column=2, padx=5, pady=5, sticky='ew')
+        Tooltip(self.set_freq_btn, "Apply the frequency to the signal generator.")
 
-        set_freq_btn = ttk.Button(sg_frame, text="Set Frequency", command=self.set_frequency)
-        set_freq_btn.grid(row=1, column=2, padx=2, pady=2, sticky='ew')
-        Tooltip(set_freq_btn, "Apply the frequency to the signal generator.")
+        self.minus_freq_btn = ttk.Button(self.sg_settings_frame, text="-", command=self.decrease_freq, width=3)
+        self.minus_freq_btn.grid(row=0, column=3, padx=2, pady=5, sticky='ew')
+        Tooltip(self.minus_freq_btn, "Decrease frequency.")
+        self.plus_freq_btn = ttk.Button(self.sg_settings_frame, text="+", command=self.increase_freq, width=3)
+        self.plus_freq_btn.grid(row=0, column=4, padx=2, pady=5, sticky='ew')
+        Tooltip(self.plus_freq_btn, "Increase frequency.")
 
-        minus_btn = ttk.Button(sg_frame, text="-", command=self.decrease_freq, width=2)
-        minus_btn.grid(row=1, column=3, padx=2, pady=2, sticky='ew')
-        Tooltip(minus_btn, "Decrease frequency by 100 Hz.")
-
-        plus_btn = ttk.Button(sg_frame, text="+", command=self.increase_freq, width=2)
-        plus_btn.grid(row=1, column=4, padx=2, pady=2, sticky='ew')
-        Tooltip(plus_btn, "Increase frequency by 100 Hz.")
-
-        ttk.Label(sg_frame, text="Voltage (V):").grid(row=1, column=5, sticky='e', padx=2, pady=2)
+        ttk.Label(self.sg_settings_frame, text="Voltage (V):", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
         self.sg_voltage_var = tk.DoubleVar(value=1.0)
-        volt_spin = ttk.Spinbox(sg_frame, from_=0, to=10, increment=0.01, textvariable=self.sg_voltage_var, width=8)
-        volt_spin.grid(row=1, column=6, sticky='ew', padx=2, pady=2)
-        Tooltip(volt_spin, "Set the output voltage in volts.")
+        self.volt_spin = ttk.Spinbox(self.sg_settings_frame, from_=0, to=10, increment=0.01, textvariable=self.sg_voltage_var, width=8)
+        self.volt_spin.grid(row=1, column=1, sticky='ew', padx=5, pady=5)
+        Tooltip(self.volt_spin, "Set the output voltage in volts.")
+        self.set_volt_btn = ttk.Button(self.sg_settings_frame, text="Set Volt", command=self.set_voltage)
+        self.set_volt_btn.grid(row=1, column=2, padx=5, pady=5, sticky='ew')
+        Tooltip(self.set_volt_btn, "Apply the voltage to the signal generator.")
 
-        set_volt_btn = ttk.Button(sg_frame, text="Set Voltage", command=self.set_voltage)
-        set_volt_btn.grid(row=1, column=7, padx=2, pady=2, sticky='ew')
-        Tooltip(set_volt_btn, "Apply the voltage to the signal generator.")
+        self.output_on_btn = ttk.Button(self.sg_settings_frame, text="Output ON", command=self.output_on, style='Primary.TButton')
+        self.output_on_btn.grid(row=1, column=3, columnspan=1, padx=5, pady=5, sticky='ew') # columnspan reduced for balance
+        Tooltip(self.output_on_btn, "Enable the signal generator output.")
+        self.output_off_btn = ttk.Button(self.sg_settings_frame, text="Output OFF", command=self.output_off)
+        self.output_off_btn.grid(row=1, column=4, columnspan=1, padx=5, pady=5, sticky='ew')
+        Tooltip(self.output_off_btn, "Disable the signal generator output.")
 
-        on_btn = ttk.Button(sg_frame, text="Output ON", command=self.output_on)
-        on_btn.grid(row=1, column=8, padx=2, pady=2, sticky='ew')
-        Tooltip(on_btn, "Enable the signal generator output.")
+        # Raw command part (initially disabled)
+        self.sg_raw_cmd_frame = ttk.Frame(sg_frame, style='Content.TFrame')
+        self.sg_raw_cmd_frame.grid(row=2, column=0, columnspan=6, sticky='ew', pady=5)
+        self.sg_raw_cmd_frame.columnconfigure(1, weight=1) # Entry expands
 
-        off_btn = ttk.Button(sg_frame, text="Output OFF", command=self.output_off)
-        off_btn.grid(row=1, column=9, padx=2, pady=2, sticky='ew')
-        Tooltip(off_btn, "Disable the signal generator output.")
-
-        ttk.Label(sg_frame, text="Raw Cmd:").grid(row=2, column=0, sticky='e', padx=2, pady=2)
+        ttk.Label(self.sg_raw_cmd_frame, text="Raw Cmd:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
         self.sg_cmd_var = tk.StringVar()
-        cmd_entry = ttk.Entry(sg_frame, textvariable=self.sg_cmd_var, width=20)
-        cmd_entry.grid(row=2, column=1, columnspan=3, sticky='ew', padx=2, pady=2)
-        Tooltip(cmd_entry, "Send a raw command string to the signal generator.")
+        self.cmd_entry = ttk.Entry(self.sg_raw_cmd_frame, textvariable=self.sg_cmd_var, width=30)
+        self.cmd_entry.grid(row=0, column=1, columnspan=2, sticky='ew', padx=5, pady=5)
+        Tooltip(self.cmd_entry, "Send a raw command string to the signal generator.")
+        self.send_cmd_btn = ttk.Button(self.sg_raw_cmd_frame, text="Send", command=self.send_cmd)
+        self.send_cmd_btn.grid(row=0, column=3, padx=5, pady=5, sticky='ew')
+        Tooltip(self.send_cmd_btn, "Send the raw command to the signal generator.")
 
-        send_btn = ttk.Button(sg_frame, text="Send", command=self.send_cmd)
-        send_btn.grid(row=2, column=4, padx=2, pady=2, sticky='ew')
-        Tooltip(send_btn, "Send the raw command to the signal generator.")
+        # Group all SG controls that should be disabled/enabled together
+        self.sg_interactive_widgets = [
+            self.freq_spin, self.set_freq_btn, self.minus_freq_btn, self.plus_freq_btn,
+            self.volt_spin, self.set_volt_btn, self.output_on_btn, self.output_off_btn,
+            self.cmd_entry, self.send_cmd_btn
+        ]
+        self._toggle_sg_controls_enabled(False) # Initially disabled
+        self.toggle_pid_controls() # Initial state based on checkbox
 
-        # Make main frame responsive
-        for i in range(12):
-            self.columnconfigure(i, weight=1)
-        self.rowconfigure(1, weight=1)
+    def _toggle_sg_controls_enabled(self, enabled: bool):
+        state = 'normal' if enabled else 'disabled'
+        for widget in self.sg_interactive_widgets:
+            widget.configure(state=state)
+        # Special handling for frames if they need to be hidden/shown or look disabled
+        # For now, just disabling contents.
+
+    def toggle_pid_controls(self):
+        enabled = self.pid_enable_var.get()
+        state = 'normal' if enabled else 'disabled'
+        # Keep Update button always enabled to change params even if PID is not running
+        self.start_pid_btn.configure(state=state)
+        self.stop_pid_btn.configure(state=state)
+        # Directly configure spinboxes
+        self.setpoint_spin.configure(state=state)
+        self.kp_spin.configure(state=state)
+        self.ki_spin.configure(state=state)
+        self.kd_spin.configure(state=state)
 
     def open_serial(self):
         self.siggen._port = self.sg_port_var.get()
         self.siggen._baud = self.sg_baud_var.get()
         try:
             self.siggen.open()
-            self.set_status(f"Opened {self.siggen._port} at {self.siggen._baud}")
+            self.set_status(f"Opened {self.siggen._port} at {self.siggen._baud} baud.")
+            self.open_serial_btn.configure(state='disabled')
+            self.close_serial_btn.configure(state='normal')
+            self.port_entry.configure(state='disabled')
+            self.baud_entry.configure(state='disabled')
+            self._toggle_sg_controls_enabled(True)
         except Exception as e:
-            self.set_status(f"Open failed: {e}")
+            self.set_status(f"Error opening serial: {e}")
+            # Ensure sg controls remain disabled if open fails
+            self._toggle_sg_controls_enabled(False)
 
     def close_serial(self):
         try:
             self.siggen.close()
-            self.set_status("Serial closed.")
+            self.set_status("Serial port closed.")
+            self.open_serial_btn.configure(state='normal')
+            self.close_serial_btn.configure(state='disabled')
+            self.port_entry.configure(state='normal')
+            self.baud_entry.configure(state='normal')
+            self._toggle_sg_controls_enabled(False)
         except Exception as e:
-            self.set_status(f"Close failed: {e}")
+            self.set_status(f"Error closing serial: {e}")
+
+    def update_pid(self):
+        if not self.pid_enable_var.get(): # Check if PID is enabled
+            self.set_status("PID is disabled. Enable to update parameters.")
+            return
+        try:
+            self.pid.update_tunings(self.kp_var.get(), self.ki_var.get(), self.kd_var.get())
+            self.pid.update_setpoint(self.setpoint_var.get())
+            self.set_status("PID parameters updated.")
+        except tk.TclError as e:
+            self.set_status(f"PID Update Error: Invalid value. {e}")
+        except Exception as e:
+            self.set_status(f"PID Update Error: {e}")
+
+    def start_ramp(self):
+        if not self.pid_enable_var.get():
+            self.set_status("PID is disabled. Cannot start.")
+            return
+        self.pid.resume()
+        self.set_status("PID control started.")
+        # Potentially disable start, enable stop, etc.
+        self.start_pid_btn.configure(state='disabled')
+        self.stop_pid_btn.configure(state='normal')
+
+    def stop_all(self):
+        self.pid.pause()
+        self.set_status("PID control stopped.")
+        # Potentially disable stop, enable start
+        self.start_pid_btn.configure(state='normal')
+        self.stop_pid_btn.configure(state='disabled')
+        try:
+            if self.siggen.is_open:
+                self.siggen.set_voltage(0.0) # Ensure voltage is set to 0 on stop
+                self.siggen.output_off()      # Ensure output is off
+                self.set_status("PID stopped. SigGen output set to 0V and OFF.")
+        except Exception as e:
+            self.set_status(f"PID stopped. SigGen error: {e}")
+
+    # ... (rest of the Signal Generator methods: set_frequency, increase_freq, etc.)
+    # These should check if self.siggen.is_open before acting, or rely on controls being disabled.
+    # Adding a check here for robustness.
+
+    def _check_serial_open(self):
+        if not self.siggen.is_open:
+            self.set_status("Serial port not open.")
+            return False
+        return True
 
     def set_frequency(self):
+        if not self._check_serial_open(): return
         try:
             freq = int(self.sg_freq_var.get())
             self.siggen.set_frequency(freq)
@@ -205,22 +259,27 @@ class ControlPanel(ttk.LabelFrame):
             self.set_status(f"Freq error: {e}")
 
     def increase_freq(self):
+        if not self._check_serial_open(): return
         try:
-            freq = int(self.sg_freq_var.get()) + 100
+            current_val = self.sg_freq_var.get()
+            freq = int(current_val) + int(self.freq_spin.cget('increment')) # use configured increment
             self.sg_freq_var.set(freq)
             self.set_frequency()
         except Exception as e:
             self.set_status(f"Freq error: {e}")
 
     def decrease_freq(self):
+        if not self._check_serial_open(): return
         try:
-            freq = max(0, int(self.sg_freq_var.get()) - 100)
+            current_val = self.sg_freq_var.get()
+            freq = max(0, int(current_val) - int(self.freq_spin.cget('increment')))
             self.sg_freq_var.set(freq)
             self.set_frequency()
         except Exception as e:
             self.set_status(f"Freq error: {e}")
 
     def set_voltage(self):
+        if not self._check_serial_open(): return
         try:
             voltage = float(self.sg_voltage_var.get())
             self.siggen.set_voltage(voltage)
@@ -229,40 +288,34 @@ class ControlPanel(ttk.LabelFrame):
             self.set_status(f"Volt error: {e}")
 
     def output_on(self):
+        if not self._check_serial_open(): return
         try:
             self.siggen.output_on()
             self.set_status("Output ON")
+            self.output_on_btn.configure(state='disabled')
+            self.output_off_btn.configure(state='normal')
         except Exception as e:
             self.set_status(f"ON error: {e}")
 
     def output_off(self):
+        if not self._check_serial_open(): return
         try:
             self.siggen.output_off()
             self.set_status("Output OFF")
+            self.output_on_btn.configure(state='normal')
+            self.output_off_btn.configure(state='disabled')
         except Exception as e:
             self.set_status(f"OFF error: {e}")
 
     def send_cmd(self):
+        if not self._check_serial_open(): return
         cmd = self.sg_cmd_var.get()
+        if not cmd:
+            self.set_status("Command empty.")
+            return
         try:
             resp = self.siggen.raw_command(cmd)
-            self.set_status(f"Resp: {resp}")
+            self.set_status(f"Cmd: '{cmd}' -> Resp: {resp if resp else 'OK'}")
+            self.sg_cmd_var.set("") # Clear after send
         except Exception as e:
-            self.set_status(f"Cmd error: {e}")
-
-    def update_pid(self):
-        self.pid.update_tunings(self.kp_var.get(), self.ki_var.get(), self.kd_var.get())
-        self.pid.update_setpoint(self.setpoint_var.get())
-
-    def start_ramp(self):
-        self.pid.resume()
-        # You may want to add more logic here (e.g., UI feedback)
-
-    def stop_all(self):
-        self.pid.pause()
-        # Optionally set output to 0V via siggen
-        try:
-            self.siggen.set_voltage(0.0)
-            self.set_status("Output set to 0V (STOP)")
-        except Exception:
-            pass 
+            self.set_status(f"Cmd error: {e}") 

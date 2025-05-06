@@ -38,6 +38,11 @@ class SignalGenerator:
             self._serial.close()
             self._serial = None
 
+    @property
+    def is_open(self) -> bool:
+        """Return True if the serial port is open, False otherwise."""
+        return self._serial is not None and self._serial.is_open
+
     # ------------------------------------------------------------------
     # High-level commands
     # ------------------------------------------------------------------
