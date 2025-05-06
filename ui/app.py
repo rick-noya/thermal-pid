@@ -73,6 +73,19 @@ class SenxorApp(ttk.Frame):
                                 font=('Segoe UI', 9)
                                 # borderwidth=1, relief='solid', bordercolor=COLOR_SECONDARY_ACCENT # Temporarily removed for testing
                                 )
+        
+        # --- Style for Notebook (Tabs) ---
+        style.configure('TNotebook', background=COLOR_BACKGROUND, borderwidth=0, tabmargins=[2, 5, 2, 0])
+        style.configure('TNotebook.Tab', 
+                        background=COLOR_FRAME_BG, 
+                        foreground=COLOR_TEXT_LIGHT, 
+                        padding=[10, 5], 
+                        font=('Segoe UI', 10, 'bold'),
+                        borderwidth=0)
+        style.map('TNotebook.Tab',
+                  background=[('selected', COLOR_BACKGROUND), ('!selected', COLOR_FRAME_BG), ('active', COLOR_BACKGROUND)],
+                  foreground=[('selected', COLOR_PRIMARY_ACCENT), ('!selected', COLOR_TEXT_LIGHT), ('active', COLOR_PRIMARY_ACCENT)],
+                  expand=[('selected', [1, 1, 1, 0])]) # Small top border for selected tab
 
         # Main layout panels
         # Using a more descriptive style for frames that contain actual content
@@ -92,24 +105,24 @@ class SenxorApp(ttk.Frame):
 
         self.control_panel = ControlPanel(self.main_horizontal_pane, pid, siggen, set_status=status_update_method, style='Content.TFrame')
         
-        # Create a vertical PanedWindow for the right side
-        self.right_vertical_pane = ttk.PanedWindow(self.main_horizontal_pane, orient='vertical')
+        # Create a Notebook for the right side views
+        self.right_notebook = ttk.Notebook(self.main_horizontal_pane)
 
-        self.heatmap_view = HeatmapView(self.right_vertical_pane, camera, trend_graph=None, set_status=status_update_method, style='Content.TFrame')
-        self.trend_graph = TrendGraph(self.right_vertical_pane, set_status=status_update_method, style='Content.TFrame')
+        self.heatmap_view = HeatmapView(self.right_notebook, camera, trend_graph=None, set_status=status_update_method, style='Content.TFrame')
+        self.trend_graph = TrendGraph(self.right_notebook, set_status=status_update_method, style='Content.TFrame')
         self.heatmap_view.trend_graph = self.trend_graph  # wire up after creation
-        self.osc_panel = OscilloscopePanel(self.right_vertical_pane, self.osc, set_status=status_update_method, style='Content.TFrame')
+        self.osc_panel = OscilloscopePanel(self.right_notebook, self.osc, set_status=status_update_method, style='Content.TFrame')
 
         # Add control_panel to the left of the main horizontal pane
-        self.main_horizontal_pane.add(self.control_panel, weight=1) # Adjust weight as needed, e.g., 30-40% for control panel
+        self.main_horizontal_pane.add(self.control_panel, weight=1) # Adjust weight as needed, e.g., 30-35% for control panel
 
-        # Add the right_vertical_pane to the right of the main horizontal pane
-        self.main_horizontal_pane.add(self.right_vertical_pane, weight=3) # Adjust weight, e.g., 60-70% for the right stack
+        # Add the right_notebook to the right of the main horizontal pane
+        self.main_horizontal_pane.add(self.right_notebook, weight=3) # Adjust weight, e.g., 65-70% for the right stack
 
-        # Add heatmap, trend_graph, and oscilloscope to the right vertical pane
-        self.right_vertical_pane.add(self.heatmap_view, weight=2)    # e.g., 40%
-        self.right_vertical_pane.add(self.trend_graph, weight=2)      # e.g., 30%
-        self.right_vertical_pane.add(self.osc_panel, weight=1)        # e.g., 30%
+        # Add views as tabs to the notebook
+        self.right_notebook.add(self.heatmap_view, text='Thermal Image')
+        self.right_notebook.add(self.trend_graph, text='Trend Analysis')
+        self.right_notebook.add(self.osc_panel, text='Oscilloscope')
 
 
         main_content_frame.columnconfigure(0, weight=1)
@@ -132,14 +145,7 @@ class SenxorApp(ttk.Frame):
                 # Example: control_panel gets ~35% of width
                 self.main_horizontal_pane.sashpos(0, int(total_w_main * 0.35))
 
-            # Set sashes for right_vertical_pane
-            total_h_right = self.right_vertical_pane.winfo_height()
-            if total_h_right > 0 and len(self.right_vertical_pane.panes()) == 3:
-                # Example: heatmap_view gets ~40%, trend_graph ~30%
-                sash_pos1 = int(total_h_right * 0.40) 
-                sash_pos2 = int(total_h_right * 0.70) # 40% (heatmap) + 30% (trend)
-                self.right_vertical_pane.sashpos(0, sash_pos1)
-                self.right_vertical_pane.sashpos(1, sash_pos2)
+            # No need to set sashes for the notebook content, it manages its children via tabs
 
         except tk.TclError: # Handles cases where widget might not be fully initialized
             self.after(100, self.set_initial_pane_proportions) # Retry
