@@ -3,7 +3,8 @@ from tkinter import ttk
 from .control_panel import ControlPanel
 from .heatmap_view import HeatmapView
 from .trend_graph import TrendGraph
-from .utils import Tooltip # Import Tooltip to style it here
+from .utils import Tooltip
+from .status_bar_view import StatusBarView # Import new StatusBarView
 
 class SenxorApp(ttk.Frame):
     def __init__(self, master, camera, siggen, pid):
@@ -41,7 +42,7 @@ class SenxorApp(ttk.Frame):
 
         style.configure('TLabel', background=COLOR_BACKGROUND, font=('Segoe UI', 10))
         style.configure('Content.TLabel', background=COLOR_FRAME_BG, font=('Segoe UI', 10))
-        style.configure('Status.TLabel', background=COLOR_BACKGROUND, font=('Segoe UI', 9), foreground=COLOR_TEXT_LIGHT)
+        style.configure('Status.TLabel', background=COLOR_BACKGROUND, font=('Segoe UI', 9), foreground=COLOR_TEXT_LIGHT, padding=(5,3))
 
         style.configure('TButton', font=('Segoe UI', 10, 'bold'), padding=(10, 5), foreground='white', background=COLOR_SECONDARY_ACCENT, borderwidth=0)
         style.map('TButton',
@@ -76,31 +77,33 @@ class SenxorApp(ttk.Frame):
         main_content_frame = ttk.Frame(self, style='Content.TFrame')
         main_content_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
+        # Instantiate new StatusBarView (row 0 of main_content_frame)
+        self.status_bar_view = StatusBarView(main_content_frame, style='TFrame') # Use TFrame for main app bg for status bar
+        self.status_bar_view.grid(row=0, column=0, sticky='ew', pady=(0,5)) # pady to give some space below it
+
         # Top row: PanedWindow for control panel and heatmap view
         self.top_paned = ttk.PanedWindow(main_content_frame, orient='horizontal')
-        self.top_paned.grid(row=0, column=0, sticky='nsew', pady=(0,10))
+        self.top_paned.grid(row=1, column=0, sticky='nsew', pady=(0,10))
 
-        # Pass the Content.TFrame style to internal frames of ControlPanel if needed, or let them inherit
-        self.control_panel = ControlPanel(self.top_paned, pid, siggen, set_status=self.set_status, style='Content.TFrame')
-        self.heatmap_view = HeatmapView(self.top_paned, camera, trend_graph=None, set_status=self.set_status, style='Content.TFrame')
+        # Pass the StatusBarView's set_status method to child components
+        status_update_method = self.status_bar_view.set_status
+
+        self.control_panel = ControlPanel(self.top_paned, pid, siggen, set_status=status_update_method, style='Content.TFrame')
+        self.heatmap_view = HeatmapView(self.top_paned, camera, trend_graph=None, set_status=status_update_method, style='Content.TFrame')
         # TrendGraph is also a content frame
-        self.trend_graph = TrendGraph(main_content_frame, set_status=self.set_status, style='Content.TFrame')
+        self.trend_graph = TrendGraph(main_content_frame, set_status=status_update_method, style='Content.TFrame')
         self.heatmap_view.trend_graph = self.trend_graph  # wire up after creation
 
         self.top_paned.add(self.control_panel, weight=3) # Give CP a bit more initial space ~60%
         self.top_paned.add(self.heatmap_view, weight=2) # ~40%
 
         # Bottom row: graph
-        self.trend_graph.grid(row=1, column=0, sticky='nsew')
+        self.trend_graph.grid(row=2, column=0, sticky='nsew')
 
         main_content_frame.columnconfigure(0, weight=1)
-        main_content_frame.rowconfigure(0, weight=3) # Heatmap and controls take more space
-        main_content_frame.rowconfigure(1, weight=2) # Trend graph takes less
-
-        # Status bar
-        self.status_var = tk.StringVar(value="Ready.")
-        status_bar = ttk.Label(self, textvariable=self.status_var, relief='flat', anchor='w', style='Status.TLabel', padding=(5,3))
-        status_bar.pack(side='bottom', fill='x')
+        main_content_frame.rowconfigure(0, weight=0)  # Status bar - no vertical expansion
+        main_content_frame.rowconfigure(1, weight=3)  # Paned window (CP + Heatmap)
+        main_content_frame.rowconfigure(2, weight=2)  # Trend graph
 
         # Set initial PanedWindow sash position after widgets are drawn
         self.after(100, self.set_initial_pane_proportions)
@@ -117,4 +120,7 @@ class SenxorApp(ttk.Frame):
             self.after(100, self.set_initial_pane_proportions) # Retry
 
     def set_status(self, msg):
-        self.status_var.set(msg) 
+        if hasattr(self, 'status_bar_view') and self.status_bar_view: # Check if it exists
+            self.status_bar_view.set_status(msg)
+        else: # Fallback if called before status_bar_view is initialized (should not happen in normal flow)
+            print(f"Status (early): {msg}") 

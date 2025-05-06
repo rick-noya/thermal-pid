@@ -7,7 +7,7 @@ class ControlPanel(ttk.LabelFrame):
         super().__init__(master, text="PID & Signal Generator Control", style=style, **kwargs)
         self.pid = pid
         self.siggen = siggen
-        self.set_status = set_status or (lambda msg: None)
+        self.set_status = set_status or (lambda msg: None) # Main app status
         self.columnconfigure(0, weight=1) # Make the main frame responsive
 
         # --- PID Controls Section ---
@@ -146,6 +146,11 @@ class ControlPanel(ttk.LabelFrame):
         self.send_cmd_btn.grid(row=0, column=3, padx=5, pady=5, sticky='ew')
         Tooltip(self.send_cmd_btn, "Send the raw command to the signal generator.")
 
+        # Signal Generator Status Bar
+        self.sg_status_var = tk.StringVar(value="Signal Generator Ready.")
+        sg_status_label = ttk.Label(sg_frame, textvariable=self.sg_status_var, style='Status.TLabel', anchor='w', relief='flat', padding=(3,2))
+        sg_status_label.grid(row=3, column=0, columnspan=6, sticky='ew', padx=5, pady=(5,2))
+
         # Group all SG controls that should be disabled/enabled together
         self.sg_interactive_widgets = [
             self.freq_spin, self.set_freq_btn, self.minus_freq_btn, self.plus_freq_btn,
@@ -167,40 +172,53 @@ class ControlPanel(ttk.LabelFrame):
         state = 'normal' if enabled else 'disabled'
         # Keep Update button always enabled to change params even if PID is not running
         self.start_pid_btn.configure(state=state)
-        self.stop_pid_btn.configure(state=state)
+        self.stop_pid_btn.configure(state=state if enabled else 'disabled') # Stop btn also disabled if PID disabled
         # Directly configure spinboxes
         self.setpoint_spin.configure(state=state)
         self.kp_spin.configure(state=state)
         self.ki_spin.configure(state=state)
         self.kd_spin.configure(state=state)
+        # Update button should be enabled if PID is enabled, or if values can be set even if not running
+        # For now, tied to PID enable state.
+        self.update_pid_btn.configure(state=state)
 
     def open_serial(self):
         self.siggen._port = self.sg_port_var.get()
         self.siggen._baud = self.sg_baud_var.get()
+        self.set_sg_status(f"Opening {self.siggen._port} at {self.siggen._baud} baud...")
         try:
             self.siggen.open()
-            self.set_status(f"Opened {self.siggen._port} at {self.siggen._baud} baud.")
+            status_msg = f"Opened {self.siggen._port} at {self.siggen._baud} baud."
+            self.set_status(status_msg) # Main status
+            self.set_sg_status(status_msg) # SG status
             self.open_serial_btn.configure(state='disabled')
             self.close_serial_btn.configure(state='normal')
             self.port_entry.configure(state='disabled')
             self.baud_entry.configure(state='disabled')
             self._toggle_sg_controls_enabled(True)
         except Exception as e:
-            self.set_status(f"Error opening serial: {e}")
+            error_msg = f"Error opening serial: {e}"
+            self.set_status(error_msg) # Main status
+            self.set_sg_status(error_msg) # SG status
             # Ensure sg controls remain disabled if open fails
             self._toggle_sg_controls_enabled(False)
 
     def close_serial(self):
+        self.set_sg_status("Closing serial port...")
         try:
             self.siggen.close()
-            self.set_status("Serial port closed.")
+            status_msg = "Serial port closed."
+            self.set_status(status_msg)
+            self.set_sg_status(status_msg)
             self.open_serial_btn.configure(state='normal')
             self.close_serial_btn.configure(state='disabled')
             self.port_entry.configure(state='normal')
             self.baud_entry.configure(state='normal')
             self._toggle_sg_controls_enabled(False)
         except Exception as e:
-            self.set_status(f"Error closing serial: {e}")
+            error_msg = f"Error closing serial: {e}"
+            self.set_status(error_msg)
+            self.set_sg_status(error_msg)
 
     def update_pid(self):
         if not self.pid_enable_var.get(): # Check if PID is enabled
@@ -219,11 +237,13 @@ class ControlPanel(ttk.LabelFrame):
         if not self.pid_enable_var.get():
             self.set_status("PID is disabled. Cannot start.")
             return
+        self.update_pid() # Ensure latest params are set before starting
         self.pid.resume()
         self.set_status("PID control started.")
         # Potentially disable start, enable stop, etc.
         self.start_pid_btn.configure(state='disabled')
         self.stop_pid_btn.configure(state='normal')
+        self.enable_pid_chk.configure(state='disabled') # Disable checkbox while running
 
     def stop_all(self):
         self.pid.pause()
@@ -231,6 +251,7 @@ class ControlPanel(ttk.LabelFrame):
         # Potentially disable stop, enable start
         self.start_pid_btn.configure(state='normal')
         self.stop_pid_btn.configure(state='disabled')
+        self.enable_pid_chk.configure(state='normal') # Re-enable checkbox
         try:
             if self.siggen.is_open:
                 self.siggen.set_voltage(0.0) # Ensure voltage is set to 0 on stop
@@ -245,7 +266,8 @@ class ControlPanel(ttk.LabelFrame):
 
     def _check_serial_open(self):
         if not self.siggen.is_open:
-            self.set_status("Serial port not open.")
+            # self.set_status("Serial port not open.") # Main status might be too noisy for this check
+            self.set_sg_status("Serial port not open. Please open port first.")
             return False
         return True
 
@@ -254,9 +276,13 @@ class ControlPanel(ttk.LabelFrame):
         try:
             freq = int(self.sg_freq_var.get())
             self.siggen.set_frequency(freq)
-            self.set_status(f"Frequency set to {freq} Hz")
+            status_msg = f"Frequency set to {freq} Hz"
+            self.set_sg_status(status_msg)
+            # self.set_status(status_msg) # Optionally update main status too
         except Exception as e:
-            self.set_status(f"Freq error: {e}")
+            error_msg = f"Freq error: {e}"
+            self.set_status(error_msg)
+            self.set_sg_status(error_msg)
 
     def increase_freq(self):
         if not self._check_serial_open(): return
@@ -283,39 +309,58 @@ class ControlPanel(ttk.LabelFrame):
         try:
             voltage = float(self.sg_voltage_var.get())
             self.siggen.set_voltage(voltage)
-            self.set_status(f"Voltage set to {voltage:.2f} V")
+            status_msg = f"Voltage set to {voltage:.2f} V"
+            self.set_sg_status(status_msg)
+            # self.set_status(status_msg)
         except Exception as e:
-            self.set_status(f"Volt error: {e}")
+            error_msg = f"Volt error: {e}"
+            self.set_status(error_msg)
+            self.set_sg_status(error_msg)
 
     def output_on(self):
         if not self._check_serial_open(): return
         try:
             self.siggen.output_on()
-            self.set_status("Output ON")
+            status_msg = "Signal Generator Output ON"
+            self.set_sg_status(status_msg)
+            self.set_status(status_msg) # Also to main status as it's an important state change
             self.output_on_btn.configure(state='disabled')
             self.output_off_btn.configure(state='normal')
         except Exception as e:
-            self.set_status(f"ON error: {e}")
+            error_msg = f"ON error: {e}"
+            self.set_status(error_msg)
+            self.set_sg_status(error_msg)
 
     def output_off(self):
         if not self._check_serial_open(): return
         try:
             self.siggen.output_off()
-            self.set_status("Output OFF")
+            status_msg = "Signal Generator Output OFF"
+            self.set_sg_status(status_msg)
+            self.set_status(status_msg) # Also to main status
             self.output_on_btn.configure(state='normal')
             self.output_off_btn.configure(state='disabled')
         except Exception as e:
-            self.set_status(f"OFF error: {e}")
+            error_msg = f"OFF error: {e}"
+            self.set_status(error_msg)
+            self.set_sg_status(error_msg)
 
     def send_cmd(self):
         if not self._check_serial_open(): return
         cmd = self.sg_cmd_var.get()
         if not cmd:
-            self.set_status("Command empty.")
+            self.set_sg_status("Command empty. Type a command to send.")
             return
         try:
             resp = self.siggen.raw_command(cmd)
-            self.set_status(f"Cmd: '{cmd}' -> Resp: {resp if resp else 'OK'}")
+            status_msg = f"Cmd: '{cmd}' -> Resp: {resp if resp else 'OK'}"
+            self.set_sg_status(status_msg)
+            # self.set_status(status_msg) # Maybe too verbose for main status
             self.sg_cmd_var.set("") # Clear after send
         except Exception as e:
-            self.set_status(f"Cmd error: {e}") 
+            error_msg = f"Cmd '{cmd}' error: {e}"
+            self.set_status(error_msg)
+            self.set_sg_status(error_msg)
+
+    def set_sg_status(self, msg):
+        self.sg_status_var.set(msg)
