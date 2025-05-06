@@ -25,11 +25,15 @@ class HeatmapView(ttk.Frame):
         self.trend_graph = trend_graph
         self.set_status = set_status or (lambda msg: None)
         
+        self.camera_aspect_ratio = 80.0 / 62.0 # Store camera aspect ratio W/H
+
         self.img_label = ttk.Label(self) # No specific style, will inherit from parent or default TFrame
         self.img_label.grid(row=0, column=0, padx=5, pady=5, sticky='nsew')
+        self.img_label.configure(anchor=tk.CENTER) # Center the image within the label
+
         self.last_frame = None
         # self.last_overlay = None # Not used
-        self.last_size = (400, 310) # Default, will be updated by configure
+        self.last_render_size = (int(300 * self.camera_aspect_ratio), 300) # Initial default, will be updated by configure
         self.after_id = None
         self.update_interval = 100  # ms (10 FPS)
         self.running = True
@@ -121,12 +125,31 @@ class HeatmapView(ttk.Frame):
         # self.set_status(f"Smoothing history set to: Hot {new_hot_len}, Cold {new_cold_len}")
 
     def on_img_label_resize(self, event):
-        w, h = event.width, event.height
-        if w < 50 or h < 50:
+        allocated_w, allocated_h = event.width, event.height
+        if allocated_w < 10 or allocated_h < 10: # Prevent division by zero or too small sizes
             return
-        self.last_size = (w, h)
+
+        # Calculate render_w and render_h to maintain aspect ratio
+        # Camera aspect ratio is W/H = 80/62
+        
+        # If allocated space is wider than camera aspect ratio (limited by height)
+        if (allocated_w / allocated_h) > self.camera_aspect_ratio:
+            render_h = allocated_h
+            render_w = int(allocated_h * self.camera_aspect_ratio)
+        # Else (allocated space is taller or same aspect ratio, limited by width)
+        else:
+            render_w = allocated_w
+            render_h = int(allocated_w / self.camera_aspect_ratio)
+
+        # Ensure minimum size for rendering to avoid errors with cv.resize
+        render_w = max(render_w, 1)
+        render_h = max(render_h, 1)
+
+        self.last_render_size = (render_w, render_h)
+        
         if self.last_frame is not None:
-            self.render_frame(self.last_frame, size=(w, h))
+            # Pass the aspect-corrected size to render_frame
+            self.render_frame(self.last_frame, size=self.last_render_size)
 
     def update_image(self):
         if not self.running:
@@ -134,7 +157,8 @@ class HeatmapView(ttk.Frame):
         frame, header = self.camera.read_frame()
         if frame is not None:
             self.last_frame = frame.copy()
-            self.render_frame(frame, size=self.last_size)
+            # Use the aspect-corrected size for rendering
+            self.render_frame(frame, size=self.last_render_size)
             # Push data to trend graph
             min_temp = np.min(frame)
             max_temp = np.max(frame)

@@ -3,16 +3,18 @@ from tkinter import ttk
 from .control_panel import ControlPanel
 from .heatmap_view import HeatmapView
 from .trend_graph import TrendGraph
+from .oscilloscope_panel import OscilloscopePanel
 from .utils import Tooltip
 from .status_bar_view import StatusBarView # Import new StatusBarView
 
 class SenxorApp(ttk.Frame):
-    def __init__(self, master, camera, siggen, pid):
+    def __init__(self, master, camera, siggen, pid, osc):
         super().__init__(master)
         self.master = master
         self.camera = camera
         self.siggen = siggen
         self.pid = pid
+        self.osc = osc
         self.pack(fill='both', expand=True)
 
         # Set default window size
@@ -81,29 +83,39 @@ class SenxorApp(ttk.Frame):
         self.status_bar_view = StatusBarView(main_content_frame, style='TFrame') # Use TFrame for main app bg for status bar
         self.status_bar_view.grid(row=0, column=0, sticky='ew', pady=(0,5)) # pady to give some space below it
 
-        # Top row: PanedWindow for control panel and heatmap view
-        self.top_paned = ttk.PanedWindow(main_content_frame, orient='horizontal')
-        self.top_paned.grid(row=1, column=0, sticky='nsew', pady=(0,10))
-
         # Pass the StatusBarView's set_status method to child components
         status_update_method = self.status_bar_view.set_status
 
-        self.control_panel = ControlPanel(self.top_paned, pid, siggen, set_status=status_update_method, style='Content.TFrame')
-        self.heatmap_view = HeatmapView(self.top_paned, camera, trend_graph=None, set_status=status_update_method, style='Content.TFrame')
-        # TrendGraph is also a content frame
-        self.trend_graph = TrendGraph(main_content_frame, set_status=status_update_method, style='Content.TFrame')
+        # Create a main horizontal PanedWindow
+        self.main_horizontal_pane = ttk.PanedWindow(main_content_frame, orient='horizontal')
+        self.main_horizontal_pane.grid(row=1, column=0, sticky='nsew')
+
+        self.control_panel = ControlPanel(self.main_horizontal_pane, pid, siggen, set_status=status_update_method, style='Content.TFrame')
+        
+        # Create a vertical PanedWindow for the right side
+        self.right_vertical_pane = ttk.PanedWindow(self.main_horizontal_pane, orient='vertical')
+
+        self.heatmap_view = HeatmapView(self.right_vertical_pane, camera, trend_graph=None, set_status=status_update_method, style='Content.TFrame')
+        self.trend_graph = TrendGraph(self.right_vertical_pane, set_status=status_update_method, style='Content.TFrame')
         self.heatmap_view.trend_graph = self.trend_graph  # wire up after creation
+        self.osc_panel = OscilloscopePanel(self.right_vertical_pane, self.osc, set_status=status_update_method, style='Content.TFrame')
 
-        self.top_paned.add(self.control_panel, weight=3) # Give CP a bit more initial space ~60%
-        self.top_paned.add(self.heatmap_view, weight=2) # ~40%
+        # Add control_panel to the left of the main horizontal pane
+        self.main_horizontal_pane.add(self.control_panel, weight=1) # Adjust weight as needed, e.g., 30-40% for control panel
 
-        # Bottom row: graph
-        self.trend_graph.grid(row=2, column=0, sticky='nsew')
+        # Add the right_vertical_pane to the right of the main horizontal pane
+        self.main_horizontal_pane.add(self.right_vertical_pane, weight=3) # Adjust weight, e.g., 60-70% for the right stack
+
+        # Add heatmap, trend_graph, and oscilloscope to the right vertical pane
+        self.right_vertical_pane.add(self.heatmap_view, weight=2)    # e.g., 40%
+        self.right_vertical_pane.add(self.trend_graph, weight=2)      # e.g., 30%
+        self.right_vertical_pane.add(self.osc_panel, weight=1)        # e.g., 30%
+
 
         main_content_frame.columnconfigure(0, weight=1)
-        main_content_frame.rowconfigure(0, weight=0)  # Status bar - no vertical expansion
-        main_content_frame.rowconfigure(1, weight=3)  # Paned window (CP + Heatmap)
-        main_content_frame.rowconfigure(2, weight=2)  # Trend graph
+        main_content_frame.rowconfigure(0, weight=0)  # Status bar
+        main_content_frame.rowconfigure(1, weight=1)  # Main content area (main_horizontal_pane)
+
 
         # Set initial PanedWindow sash position after widgets are drawn
         self.after(100, self.set_initial_pane_proportions)
@@ -114,11 +126,21 @@ class SenxorApp(ttk.Frame):
     def set_initial_pane_proportions(self):
         self.update_idletasks()
         try:
-            total_w = self.top_paned.winfo_width()
-            # Set sash so control panel is about 60% and heatmap 40%
-            # Ensure it doesn't fail if winfo_width is 0 or paned children not ready
-            if total_w > 0 and len(self.top_paned.panes()) == 2: 
-                 self.top_paned.sashpos(0, int(total_w * 0.6))
+            # Set sash for main_horizontal_pane
+            total_w_main = self.main_horizontal_pane.winfo_width()
+            if total_w_main > 0 and len(self.main_horizontal_pane.panes()) == 2:
+                # Example: control_panel gets ~35% of width
+                self.main_horizontal_pane.sashpos(0, int(total_w_main * 0.35))
+
+            # Set sashes for right_vertical_pane
+            total_h_right = self.right_vertical_pane.winfo_height()
+            if total_h_right > 0 and len(self.right_vertical_pane.panes()) == 3:
+                # Example: heatmap_view gets ~40%, trend_graph ~30%
+                sash_pos1 = int(total_h_right * 0.40) 
+                sash_pos2 = int(total_h_right * 0.70) # 40% (heatmap) + 30% (trend)
+                self.right_vertical_pane.sashpos(0, sash_pos1)
+                self.right_vertical_pane.sashpos(1, sash_pos2)
+
         except tk.TclError: # Handles cases where widget might not be fully initialized
             self.after(100, self.set_initial_pane_proportions) # Retry
 
