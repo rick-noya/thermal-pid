@@ -108,7 +108,7 @@ class SenxorApp(ttk.Frame):
         # Create a Notebook for the right side views
         self.right_notebook = ttk.Notebook(self.main_horizontal_pane)
 
-        self.heatmap_view = HeatmapView(self.right_notebook, camera, trend_graph=None, set_status=status_update_method, style='Content.TFrame')
+        self.heatmap_view = HeatmapView(self.right_notebook, camera, trend_graph=None, pid=self.pid, siggen=self.siggen, osc=self.osc, set_status=status_update_method, style='Content.TFrame')
         self.trend_graph = TrendGraph(self.right_notebook, set_status=status_update_method, style='Content.TFrame')
         self.heatmap_view.trend_graph = self.trend_graph  # wire up after creation
         self.osc_panel = OscilloscopePanel(self.right_notebook, self.osc, set_status=status_update_method, style='Content.TFrame')

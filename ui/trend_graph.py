@@ -34,6 +34,8 @@ matplotlib.rcParams['legend.fontsize'] = 9
 
 # Define a second y-axis for voltage
 VOLTAGE_COLOR = '#FF8F00'  # Amber/Orange for voltage
+CURRENT_COLOR = '#00ACC1'  # Cyan for current
+POWER_COLOR = '#7E57C2'    # Deep Purple for power
 
 class TrendGraph(ttk.Frame):
     def __init__(self, master, set_status=None, style='Content.TFrame', **kwargs):
@@ -57,19 +59,27 @@ class TrendGraph(ttk.Frame):
         self.ax.set_ylabel('Temperature (°C)')
         self.ax.set_xlabel('Time (PST)') # Updated X-axis label
         
-        # Create a second y-axis for voltage
+        # Create a second y-axis for the selected quantity
         self.ax2 = self.ax.twinx()
-        self.line_voltage, = self.ax2.plot([], [], color=VOLTAGE_COLOR, linestyle='-.', linewidth=1.5, label='Voltage (V)') # Amber/Orange
+        self.line_voltage, = self.ax2.plot([], [], color=VOLTAGE_COLOR, linestyle='-.', linewidth=1.5, label='Voltage (V)')
+        self.line_current, = self.ax2.plot([], [], color=CURRENT_COLOR, linestyle=':', linewidth=1.5, label='Current (A)')
+        self.line_power, = self.ax2.plot([], [], color=POWER_COLOR, linestyle='-.', linewidth=1.5, label='Power (W)')
+        
+        # Initial setup for right axis (default to Voltage)
         self.ax2.set_ylabel('Voltage (V)', color=VOLTAGE_COLOR)
         self.ax2.tick_params(axis='y', labelcolor=VOLTAGE_COLOR)
+        self.line_current.set_visible(False) # Initially hide current
+        self.line_power.set_visible(False)   # Initially hide power
 
         # Combine legends from both axes
         lines, labels = self.ax.get_legend_handles_labels()
         lines2, labels2 = self.ax2.get_legend_handles_labels()
-        self.ax.legend(lines + lines2, labels + labels2, loc='upper left')
+        # Filter out hidden lines from ax2 for the initial legend
+        active_lines2 = [l for l in lines2 if l.get_visible()]
+        active_labels2 = [lab for l, lab in zip(lines2, labels2) if l.get_visible()]
+        self.legend = self.ax.legend(lines + active_lines2, labels + active_labels2, loc='upper left')
         
         self.ax.grid(True, linestyle=':', alpha=0.7) # Grid for primary axis
-        # self.ax2.grid(False) # No separate grid for voltage axis, or style if needed
         self.fig.tight_layout(pad=0.5) # Adjust layout to prevent overlap
 
         # Interactive elements
@@ -101,18 +111,28 @@ class TrendGraph(ttk.Frame):
         self.time_span_selector.bind("<<ComboboxSelected>>", self.on_timespan_change)
         Tooltip(self.time_span_selector, "Select the time window for the trend graph.")
 
+        # Right Y-axis quantity selection
+        ttk.Label(controls_frame, text="Right Axis:", style='Content.TLabel').grid(row=0, column=2, sticky='w', padx=(10,0))
+        self.right_axis_options = ["Voltage (V)", "Current (A)", "Power (W)"]
+        self.right_axis_var = tk.StringVar(value="Voltage (V)")
+        self.right_axis_selector = ttk.Combobox(controls_frame, textvariable=self.right_axis_var,
+                                                values=self.right_axis_options, state="readonly", width=12)
+        self.right_axis_selector.grid(row=0, column=3, padx=5, pady=5, sticky='ew')
+        self.right_axis_selector.bind("<<ComboboxSelected>>", self.on_right_axis_selection_change)
+        Tooltip(self.right_axis_selector, "Select quantity for the right Y-axis.")
+
         # Export and Clear buttons
         self.export_btn = ttk.Button(controls_frame, text="Export CSV", command=self.export_csv, width=12)
-        self.export_btn.grid(row=0, column=2, padx=5, pady=5, sticky='e')
+        self.export_btn.grid(row=0, column=4, padx=5, pady=5, sticky='e') # Adjusted column
         Tooltip(self.export_btn, "Export all collected trend data to a CSV file.")
 
         self.clear_data_btn = ttk.Button(controls_frame, text="Clear Data", command=self.clear_data, width=12)
-        self.clear_data_btn.grid(row=0, column=3, padx=5, pady=5, sticky='e')
+        self.clear_data_btn.grid(row=0, column=5, padx=5, pady=5, sticky='e') # Adjusted column
         Tooltip(self.clear_data_btn, "Clear all data from the trend graph.")
         
         # Matplotlib Navigation Toolbar
         toolbar_frame = ttk.Frame(controls_frame, style='Content.TFrame')
-        toolbar_frame.grid(row=1, column=0, columnspan=4, sticky='ew', pady=(0,5))
+        toolbar_frame.grid(row=1, column=0, columnspan=6, sticky='ew', pady=(0,5)) # Adjusted columnspan
         self.toolbar = NavigationToolbar2Tk(self.canvas, toolbar_frame)
         self.toolbar.update()
         # Remove unnecessary elements from toolbar if desired, or restyle them
@@ -127,6 +147,8 @@ class TrendGraph(ttk.Frame):
         self.min_data = []
         self.avg_data = []
         self.voltage_data = [] # New list for voltage
+        self.current_data = [] 
+        self.power_data = []   
         # self.start_time = time.time() # Removed, using absolute datetime objects
         self.current_time_span_seconds = self.time_span_options[self.time_span_var.get()]
         self.update_interval = 500  # ms, graph updates less frequently than heatmap
@@ -180,7 +202,20 @@ class TrendGraph(ttk.Frame):
             interp_max = np.interp(clicked_time_num, time_data_nums, self.max_data)
             interp_min = np.interp(clicked_time_num, time_data_nums, self.min_data)
             interp_avg = np.interp(clicked_time_num, time_data_nums, self.avg_data)
-            interp_volt = np.interp(clicked_time_num, time_data_nums, self.voltage_data)
+            # Interpolate for the selected right-axis quantity
+            selected_right_label = ""
+            interp_right_val = 0.0
+            selected_option = self.right_axis_var.get()
+            if selected_option == "Voltage (V)" and self.voltage_data:
+                interp_right_val = np.interp(clicked_time_num, time_data_nums, self.voltage_data)
+                selected_right_label = f"Volt: {interp_right_val:.2f}V"
+            elif selected_option == "Current (A)" and self.current_data:
+                interp_right_val = np.interp(clicked_time_num, time_data_nums, self.current_data)
+                selected_right_label = f"Curr: {interp_right_val:.2f}A"
+            elif selected_option == "Power (W)" and self.power_data:
+                interp_right_val = np.interp(clicked_time_num, time_data_nums, self.power_data)
+                selected_right_label = f"Pwr: {interp_right_val:.2f}W"
+
         except Exception as e:
             logger.error(f'Interpolation failed: {e}')
             idx = (np.abs(time_data_nums - clicked_time_num)).argmin()
@@ -188,18 +223,28 @@ class TrendGraph(ttk.Frame):
             interp_max = self.max_data[idx]
             interp_min = self.min_data[idx]
             interp_avg = self.avg_data[idx]
-            interp_volt = self.voltage_data[idx]
+            # Get non-interpolated value for the selected right-axis quantity
+            selected_right_label = ""
+            if selected_option == "Voltage (V)" and idx < len(self.voltage_data):
+                interp_right_val = self.voltage_data[idx]
+                selected_right_label = f"Volt: {interp_right_val:.2f}V"
+            elif selected_option == "Current (A)" and idx < len(self.current_data):
+                interp_right_val = self.current_data[idx]
+                selected_right_label = f"Curr: {interp_right_val:.2f}A"
+            elif selected_option == "Power (W)" and idx < len(self.power_data):
+                interp_right_val = self.power_data[idx]
+                selected_right_label = f"Pwr: {interp_right_val:.2f}W"
 
         clicked_time_dt = mdates.num2date(clicked_time_num, tz=self.PST)
 
         self.interactive_vline = self.ax.axvline(clicked_time_dt, color='dimgray', linestyle='--', linewidth=1)
 
         annotation_text = (
-            f"Time: {clicked_time_dt.strftime('%H:%M:%S')}\\n"
-            f"Max: {interp_max:.2f}°C\\n"
-            f"Min: {interp_min:.2f}°C\\n"
-            f"Avg: {interp_avg:.2f}°C\\n"
-            f"Volt: {interp_volt:.2f}V"
+            f"Time: {clicked_time_dt.strftime('%H:%M:%S')}\n"
+            f"Max: {interp_max:.2f}°C\n"
+            f"Min: {interp_min:.2f}°C\n"
+            f"Avg: {interp_avg:.2f}°C\n"
+            f"{selected_right_label}"
         )
         self.interactive_annotation = self.ax.text(
             0.98, 0.98, 
@@ -219,48 +264,92 @@ class TrendGraph(ttk.Frame):
         if self.interactive_vline or self.interactive_annotation:
             self.canvas.draw_idle()
 
-    def add_point(self, max_temp, min_temp, avg_temp, voltage): # Added voltage parameter
-        self.time_data.append(datetime.now(self.PST)) # Store current PST datetime
+    def on_right_axis_selection_change(self, event=None):
+        self.clear_interactive_elements() # Clear any annotations
+        selected_option = self.right_axis_var.get()
+
+        self.line_voltage.set_visible(False)
+        self.line_current.set_visible(False)
+        self.line_power.set_visible(False)
+
+        if selected_option == "Voltage (V)":
+            self.ax2.set_ylabel('Voltage (V)', color=VOLTAGE_COLOR)
+            self.ax2.tick_params(axis='y', labelcolor=VOLTAGE_COLOR)
+            self.line_voltage.set_visible(True)
+        elif selected_option == "Current (A)":
+            self.ax2.set_ylabel('Current (A)', color=CURRENT_COLOR)
+            self.ax2.tick_params(axis='y', labelcolor=CURRENT_COLOR)
+            self.line_current.set_visible(True)
+        elif selected_option == "Power (W)":
+            self.ax2.set_ylabel('Power (W)', color=POWER_COLOR)
+            self.ax2.tick_params(axis='y', labelcolor=POWER_COLOR)
+            self.line_power.set_visible(True)
+        
+        # Update legend
+        lines, labels = self.ax.get_legend_handles_labels()
+        lines2, labels2 = self.ax2.get_legend_handles_labels()
+        active_lines2 = [l for l in lines2 if l.get_visible()]
+        active_labels2 = [lab for l, lab in zip(lines2, labels2) if l.get_visible()]
+        if hasattr(self, 'legend') and self.legend: # Remove old legend if exists
+            self.legend.remove()
+        self.legend = self.ax.legend(lines + active_lines2, labels + active_labels2, loc='upper left')
+
+        self.update_graph() # Redraw with new right axis
+        if self.interactive_vline or self.interactive_annotation: # Should be cleared, but just in case
+            self.canvas.draw_idle()
+
+    def add_point(self, max_temp, min_temp, avg_temp, voltage, current, power):
+        current_time = datetime.now(self.PST)
+        self.time_data.append(current_time)
         self.max_data.append(max_temp)
         self.min_data.append(min_temp)
         self.avg_data.append(avg_temp)
-        self.voltage_data.append(voltage) # Store voltage
+        self.voltage_data.append(voltage)
+        self.current_data.append(current)
+        self.power_data.append(power)
 
     def update_graph(self):
         if not self.winfo_exists(): # Don't update if widget is destroyed
             return
             
         t_now_pst = datetime.now(self.PST)
+        selected_right_axis = self.right_axis_var.get()
 
         if self.current_time_span_seconds == -1: # All Data
-            plot_times = list(self.time_data) # Use a copy
+            plot_times = list(self.time_data)
             plot_max = list(self.max_data)
             plot_min = list(self.min_data)
             plot_avg = list(self.avg_data)
             plot_voltage = list(self.voltage_data)
+            plot_current = list(self.current_data)
+            plot_power = list(self.power_data)
         else:
             display_window_start_time = t_now_pst - timedelta(seconds=self.current_time_span_seconds)
-            
             first_idx = 0
-            # Find the first data point that is within the current display window
-            # This loop ensures we only plot data that should be visible
             for i, dt in enumerate(self.time_data):
                 if dt >= display_window_start_time:
                     first_idx = i
                     break
-            else: # If all data is older than the display window start
-                first_idx = len(self.time_data) # Results in empty plot_lists if all data is too old
+            else: 
+                first_idx = len(self.time_data)
             
             plot_times = self.time_data[first_idx:]
             plot_max = self.max_data[first_idx:]
             plot_min = self.min_data[first_idx:]
             plot_avg = self.avg_data[first_idx:]
             plot_voltage = self.voltage_data[first_idx:]
+            plot_current = self.current_data[first_idx:]
+            plot_power = self.power_data[first_idx:]
 
         self.line_max.set_data(plot_times, plot_max)
         self.line_min.set_data(plot_times, plot_min)
         self.line_avg.set_data(plot_times, plot_avg)
-        self.line_voltage.set_data(plot_times, plot_voltage) # Set voltage data
+        
+        # Set data for the right-axis lines based on selection
+        # Only the visible one will actually be drawn due to set_visible in on_right_axis_selection_change
+        self.line_voltage.set_data(plot_times, plot_voltage)
+        self.line_current.set_data(plot_times, plot_current)
+        self.line_power.set_data(plot_times, plot_power)
         
         self.ax.relim()
         self.ax.autoscale_view()
@@ -298,6 +387,8 @@ class TrendGraph(ttk.Frame):
         self.min_data.clear()
         self.avg_data.clear()
         self.voltage_data.clear() # Clear voltage data
+        self.current_data.clear()
+        self.power_data.clear()
         self.update_graph() # Redraw empty graph, which will now set axes based on current time
         if self.interactive_vline or self.interactive_annotation:
             self.canvas.draw_idle()
@@ -319,11 +410,11 @@ class TrendGraph(ttk.Frame):
         try:
             with open(filename, 'w', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow(['Timestamp (PST)', 'Max Temp (C)', 'Min Temp (C)', 'Avg Temp (C)', 'Voltage (V)']) # Updated header
-                for dt_obj, mx, mn, av, v in zip(self.time_data, self.max_data, self.min_data, self.avg_data, self.voltage_data):
+                writer.writerow(['Timestamp (PST)', 'Max Temp (C)', 'Min Temp (C)', 'Avg Temp (C)', 'Voltage (V)', 'Current (A)', 'Power (W)']) # Updated header
+                for dt_obj, mx, mn, av, v, c, p in zip(self.time_data, self.max_data, self.min_data, self.avg_data, self.voltage_data, self.current_data, self.power_data):
                     # Format datetime object to string including PST
                     timestamp_str = dt_obj.strftime('%Y-%m-%d %H:%M:%S %Z')
-                    writer.writerow([timestamp_str, mx, mn, av, v]) # Write formatted timestamp
+                    writer.writerow([timestamp_str, mx, mn, av, v, c, p]) # Write formatted timestamp
             self.set_status(f"Graph data exported to {filename}")
         except Exception as e:
             self.set_status(f"Export failed: {e}")

@@ -306,13 +306,13 @@ def usb_get_ack(port):
     try:
         cks.decode()
     except UnicodeDecodeError:
-        print('USB check sum decode error: {}'.format(cks))
+        #print('USB check sum decode error: {}'.format(cks))
         return None
     try:
         cks = int(cks, base=16)
     except ValueError:
         # if host too slow, we get invalid literals here
-        logger.error('Bad USB check sum literals for {}: {}'.format(cmd, cks))
+        #logger.error('Bad USB check sum literals for {}: {}'.format(cmd, cks))
         return None
     if cs != cks:
         logger.error('Check sum mismatch: calculated {}, received {}'.

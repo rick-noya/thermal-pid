@@ -5,6 +5,9 @@ import numpy as np
 import cv2 as cv
 from collections import deque
 from .utils import Tooltip
+import logging
+
+logger = logging.getLogger(__name__)
 
 COLORMAPS = {
     'Jet': cv.COLORMAP_JET,
@@ -19,10 +22,13 @@ COLORMAPS = {
 }
 
 class HeatmapView(ttk.Frame):
-    def __init__(self, master, camera, trend_graph=None, set_status=None, style='Content.TFrame', **kwargs):
+    def __init__(self, master, camera, trend_graph=None, pid=None, siggen=None, osc=None, set_status=None, style='Content.TFrame', **kwargs):
         super().__init__(master, style=style, **kwargs)
         self.camera = camera
         self.trend_graph = trend_graph
+        self.pid = pid
+        self.siggen = siggen
+        self.osc = osc
         self.set_status = set_status or (lambda msg: None)
         
         self.camera_aspect_ratio = 80.0 / 62.0 # Store camera aspect ratio W/H
@@ -182,11 +188,54 @@ class HeatmapView(ttk.Frame):
             min_temp = np.min(frame)
             max_temp = np.max(frame)
             avg_temp = np.mean(frame)
+
+            # Fetch data from oscilloscope
+            # These will be the actual measured values if scope is connected and running
+            measured_voltage = 0.0
+            measured_current = 0.0
+            measured_power = 0.0
+            if self.osc and self.osc.is_connected:
+                try:
+                    v, c, p = self.osc.get_voltage_current_power()
+                    measured_voltage = v if v is not None else 0.0
+                    measured_current = c if c is not None else 0.0
+                    measured_power = p if p is not None else 0.0
+                except Exception as e:
+                    # self.set_status(f"Oscilloscope read error: {e}") # Can be noisy
+                    logger.warning(f"Oscilloscope read error in HeatmapView: {e}")
+                    # Keep defaults if error
+            
+            voltage_to_graph = 0.0 # This is the value that goes to the graph's "voltage" data series
+
+            if self.pid and self.siggen and self.pid.auto_mode:
+                current_temp_for_pid = max_temp
+                pid_output_voltage = self.pid(current_temp_for_pid)
+                
+                if self.siggen.is_open:
+                    try:
+                        self.siggen.set_voltage(pid_output_voltage)
+                        # When PID is active, the primary "voltage" for the trend could be the PID output
+                        # or the measured voltage. Let's decide: graph the PID setpoint voltage.
+                        voltage_to_graph = pid_output_voltage 
+                    except Exception as e:
+                        self.set_status(f"SigGen Error: {e}")
+                        voltage_to_graph = 0.0 # Fallback if SigGen error
+                else:
+                    voltage_to_graph = 0.0 # PID on, but SigGen not open
+            else:
+                # PID is off. Graph the measured voltage from the oscilloscope.
+                voltage_to_graph = measured_voltage
+            
             if self.trend_graph:
-                # Add current hot, cold, and average temperatures to the trend graph
-                # TODO: Get actual voltage if available
-                current_voltage = 0.0 # Placeholder for voltage
-                self.trend_graph.add_point(max_temp, min_temp, avg_temp, current_voltage)
+                # Pass measured_voltage, measured_current, measured_power for the selectable right axis.
+                # voltage_to_graph is specifically for the primary "Voltage (V)" data series if selected on right axis,
+                # or if we want a dedicated non-selectable line for PID output (not current design).
+                # For now, the TrendGraph's `voltage_data` will receive `voltage_to_graph`.
+                self.trend_graph.add_point(max_temp, min_temp, avg_temp, 
+                                           voltage_to_graph,  # This feeds TrendGraph's self.voltage_data
+                                           measured_current,  # This feeds TrendGraph's self.current_data
+                                           measured_power)    # This feeds TrendGraph's self.power_data
+
         self.after_id = self.after(self.update_interval, self.update_image)
 
     def render_frame(self, frame, size=(400, 310)):
