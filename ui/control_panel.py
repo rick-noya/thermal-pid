@@ -1,14 +1,26 @@
 import tkinter as tk
 from tkinter import ttk
 from .utils import Tooltip
+import sys
+import os
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir) # This gets the root of the project if ui is a subdir
+sys.path.insert(0, parent_dir)
+from devices.camera_manager import CameraManager
+from devices.data_aggregator import DataAggregator
 
 class ControlPanel(ttk.LabelFrame):
-    def __init__(self, master, pid, siggen, set_status=None, style='TLabelframe', **kwargs):
+    def __init__(self, master, pid, siggen, camera_manager: CameraManager, data_aggregator: DataAggregator, set_status=None, style='TLabelframe', **kwargs):
         super().__init__(master, text="PID & Signal Generator Control", style=style, **kwargs)
         self.pid = pid
         self.siggen = siggen
+        self.camera_manager = camera_manager
+        self.data_aggregator = data_aggregator
         self.set_status = set_status or (lambda msg: None) # Main app status
         self.columnconfigure(0, weight=1) # Make the main frame responsive
+
+        # Store available cameras for mapping display names to indices
+        self._available_cameras_map = {}
 
         # --- PID Controls Section ---
         pid_frame = ttk.Frame(self, padding=(5,5), style='Content.TFrame') # Use Content.TFrame if TLabelframe bg is different
@@ -68,6 +80,34 @@ class ControlPanel(ttk.LabelFrame):
         for i in range(4): actions_frame.columnconfigure(i, weight=1, uniform="actions")
         pid_frame.columnconfigure(0, weight=1)
         pid_frame.columnconfigure(1, weight=2) # Spinbox gets more space
+
+        # --- PID Input Source Configuration Section ---
+        pid_source_frame = ttk.LabelFrame(pid_frame, text="PID Input Source", style='TLabelframe', padding=(5,5))
+        pid_source_frame.grid(row=1, column=0, sticky='ew', padx=0, pady=(10,5))
+        pid_source_frame.columnconfigure(1, weight=1) # Allow comboboxes to expand
+
+        ttk.Label(pid_source_frame, text="Source Camera(s):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        self.pid_cam_source_var = tk.StringVar()
+        self.pid_cam_source_combo = ttk.Combobox(pid_source_frame, textvariable=self.pid_cam_source_var, state='readonly', width=25)
+        self.pid_cam_source_combo.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
+        Tooltip(self.pid_cam_source_combo, "Select camera(s) to use for PID input.")
+        self.pid_cam_source_combo.bind('<<ComboboxSelected>>', self._update_pid_input_source)
+
+        ttk.Label(pid_source_frame, text="Aggregation Mode:", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        self.pid_agg_mode_var = tk.StringVar()
+        # Define available aggregation modes from DataAggregator (or a predefined list)
+        self.AGGREGATION_MODES = ['average_mean', 'overall_max', 'first_valid_mean'] 
+        # Add 'individual_means', 'individual_maxs' if PID logic can handle list input directly, 
+        # or if we want to pick the first element from them.
+        # Current PID takes first from list, so they are usable.
+        # self.AGGREGATION_MODES.extend(['individual_means', 'individual_maxs'])
+        self.pid_agg_mode_combo = ttk.Combobox(pid_source_frame, textvariable=self.pid_agg_mode_var, values=self.AGGREGATION_MODES, state='readonly', width=25)
+        self.pid_agg_mode_combo.grid(row=1, column=1, sticky='ew', padx=5, pady=5)
+        Tooltip(self.pid_agg_mode_combo, "Select how data from selected camera(s) is aggregated for PID.")
+        self.pid_agg_mode_combo.bind('<<ComboboxSelected>>', self._update_pid_input_source)
+
+        self._populate_pid_camera_source_options()
+        self._set_initial_pid_source_ui()
 
         # --- Signal Generator Controls Section ---
         sg_frame = ttk.LabelFrame(self, text="Signal Generator", style='TLabelframe', padding=(5,5))
@@ -364,3 +404,86 @@ class ControlPanel(ttk.LabelFrame):
 
     def set_sg_status(self, msg):
         self.sg_status_var.set(msg)
+
+    def _populate_pid_camera_source_options(self):
+        self._available_cameras_map = {}
+        camera_options = ["All Connected Cameras"] # Default option
+        active_cams = self.camera_manager.get_all_cameras() if self.camera_manager else []
+        
+        for idx, cam in enumerate(active_cams):
+            display_name = f"Camera {cam.connected_port or f'(Index {idx})'}" # Use connected_port or fallback
+            camera_options.append(display_name)
+            self._available_cameras_map[display_name] = idx # Map display name to original index in active_cams
+            
+        self.pid_cam_source_combo['values'] = camera_options
+        if not active_cams:
+            self.pid_cam_source_var.set("No cameras available")
+            self.pid_cam_source_combo.configure(state='disabled')
+        elif camera_options: # If options were populated (i.e. "All" or more)
+             self.pid_cam_source_combo.configure(state='readonly')
+             # Initial selection will be set by _set_initial_pid_source_ui
+
+    def _set_initial_pid_source_ui(self):
+        # Set initial aggregation mode from PID instance
+        if self.pid.pid_aggregation_mode in self.AGGREGATION_MODES:
+            self.pid_agg_mode_var.set(self.pid.pid_aggregation_mode)
+        elif self.AGGREGATION_MODES: # Fallback to first available mode
+            self.pid_agg_mode_var.set(self.AGGREGATION_MODES[0])
+        
+        # Set initial camera source from PID instance
+        active_cams = self.camera_manager.get_all_cameras() if self.camera_manager else []
+        if self.pid.pid_camera_indices is None:
+            self.pid_cam_source_var.set("All Connected Cameras")
+        elif self.pid.pid_camera_indices and isinstance(self.pid.pid_camera_indices, list) and len(self.pid.pid_camera_indices) == 1:
+            idx_to_find = self.pid.pid_camera_indices[0]
+            found_display_name = None
+            for display_name, original_idx in self._available_cameras_map.items():
+                if original_idx == idx_to_find:
+                    found_display_name = display_name
+                    break
+            if found_display_name:
+                self.pid_cam_source_var.set(found_display_name)
+            elif self._available_cameras_map: # If specific index not found but cameras exist, default to "All"
+                 self.pid_cam_source_var.set("All Connected Cameras")
+            # If no cameras or map is empty, it might have been set by _populate correctly already
+        elif self.pid_cam_source_combo['values']: # Default to first option if specific setup is not clear
+             self.pid_cam_source_var.set(self.pid_cam_source_combo['values'][0])
+        # Else, if no cameras, it's handled by _populate.
+
+    def _update_pid_input_source(self, event=None): # event arg for bind
+        if not self.data_aggregator or not self.pid: # Guard clause
+            return
+
+        selected_cam_source_str = self.pid_cam_source_var.get()
+        selected_agg_mode = self.pid_agg_mode_var.get()
+
+        camera_indices_for_pid = None # Default to None (all cameras)
+
+        if selected_cam_source_str != "All Connected Cameras" and selected_cam_source_str in self._available_cameras_map:
+            original_cam_index = self._available_cameras_map[selected_cam_source_str]
+            camera_indices_for_pid = [original_cam_index]
+        elif selected_cam_source_str == "No cameras available":
+            # If no cameras, PID should not use aggregator or use None for indices
+            # The PID.__call__ already handles None from aggregator.
+             self.pid.set_input_source(self.data_aggregator, None, selected_agg_mode)
+             self.set_status(f"PID Input: No cameras. Mode: {selected_agg_mode}. PID may use last known value or default.")
+             return # Early exit
+
+        # Ensure selected_agg_mode is valid
+        if selected_agg_mode not in self.AGGREGATION_MODES:
+            self.set_status(f"Error: Invalid PID aggregation mode selected: {selected_agg_mode}")
+            # Optionally revert to a default or current PID mode
+            if self.pid.pid_aggregation_mode in self.AGGREGATION_MODES:
+                 self.pid_agg_mode_var.set(self.pid.pid_aggregation_mode)
+            return
+
+        try:
+            self.pid.set_input_source(self.data_aggregator, camera_indices_for_pid, selected_agg_mode)
+            cam_desc = "All cameras" if camera_indices_for_pid is None else f"Camera index {camera_indices_for_pid}"
+            if selected_cam_source_str != "All Connected Cameras" and selected_cam_source_str in self._available_cameras_map:
+                 cam_desc = selected_cam_source_str # Use the display name
+            self.set_status(f"PID Input: {cam_desc}, Mode: {selected_agg_mode}")
+        except Exception as e:
+            error_msg = f"Error setting PID source: {e}"
+            self.set_status(error_msg)
+            print(error_msg) # Also print for debugging

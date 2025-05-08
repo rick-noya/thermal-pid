@@ -4,20 +4,48 @@ from .control_panel import ControlPanel
 from .heatmap_view import HeatmapView
 from .trend_graph import TrendGraph
 from .utils import Tooltip
-from .status_bar_view import StatusBarView # Import new StatusBarView
+from .status_bar_view import StatusBarView
+# Assuming CameraManager can be imported (it's in devices/)
+# If app.py is in ui/, and devices/ is a sibling to ui/, then:
+# import sys
+# sys.path.append('..') # Add parent directory to sys.path
+# from devices.camera_manager import CameraManager 
+# A better way is to ensure your project is structured as a package or PYTHONPATH is set.
+# For now, assuming it can be found or will be adjusted later.
+# Let's assume direct import works if project is run from root where both ui and devices are top-level or in path.
+# from devices.camera_manager import CameraManager # This might fail depending on execution context.
+# For robustness in typical project structures:
+import sys
+import os
+# Add the parent directory of 'ui' to the Python path
+# This allows importing from sibling directories like 'devices'
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
+from devices.camera_manager import CameraManager
+from devices.data_aggregator import DataAggregator # Added for type hinting if needed, SenxorApp already gets pid which has it
+
 
 class SenxorApp(ttk.Frame):
-    def __init__(self, master, camera, siggen, pid):
+    def __init__(self, master, camera_manager: CameraManager, siggen, pid):
         super().__init__(master)
         self.master = master
-        self.camera = camera
+        self.camera_manager = camera_manager
         self.siggen = siggen
-        self.pid = pid
+        self.pid = pid # pid already has a reference to data_aggregator
+        # We need to pass camera_manager and the pid's data_aggregator to ControlPanel
+        self.data_aggregator = pid.data_aggregator # Get it from PID for consistency
+        if self.data_aggregator is None:
+            # This case should ideally not happen if main.py sets it up correctly.
+            # Fallback or error if PID wasn't given an aggregator.
+            print("CRITICAL WARNING: PID has no DataAggregator. ControlPanel PID source config will fail.")
+            # You might want to create a dummy aggregator or raise an error depending on desired robustness.
+            # For now, ControlPanel will receive None and should handle it gracefully.
+
         self.pack(fill='both', expand=True)
 
-        # Set default window size
         self.master.geometry('1300x750')
-        self.master.title("Senxor Thermal Control & Analysis")
+        self.master.title("Senxor Thermal Control & Analysis - Multi-Camera")
 
         # --- Modern Theme and Colors ---
         style = ttk.Style()
@@ -73,31 +101,56 @@ class SenxorApp(ttk.Frame):
                                 )
 
         # Main layout panels
-        # Using a more descriptive style for frames that contain actual content
         main_content_frame = ttk.Frame(self, style='Content.TFrame')
         main_content_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
-        # Instantiate new StatusBarView (row 0 of main_content_frame)
-        self.status_bar_view = StatusBarView(main_content_frame, style='TFrame') # Use TFrame for main app bg for status bar
-        self.status_bar_view.grid(row=0, column=0, sticky='ew', pady=(0,5)) # pady to give some space below it
+        self.status_bar_view = StatusBarView(main_content_frame, style='TFrame')
+        self.status_bar_view.grid(row=0, column=0, sticky='ew', pady=(0,5))
 
-        # Top row: PanedWindow for control panel and heatmap view
+        status_update_method = self.status_bar_view.set_status
+
+        # Top row: PanedWindow for control panel and the new camera display area
         self.top_paned = ttk.PanedWindow(main_content_frame, orient='horizontal')
         self.top_paned.grid(row=1, column=0, sticky='nsew', pady=(0,10))
 
-        # Pass the StatusBarView's set_status method to child components
-        status_update_method = self.status_bar_view.set_status
+        # Pass camera_manager and data_aggregator to ControlPanel
+        self.control_panel = ControlPanel(self.top_paned, 
+                                          pid=self.pid, 
+                                          siggen=self.siggen, 
+                                          camera_manager=self.camera_manager, 
+                                          data_aggregator=self.data_aggregator, # Pass the aggregator
+                                          set_status=status_update_method, 
+                                          style='Content.TFrame')
+        
+        # --- Camera Display Area using ttk.Notebook ---
+        self.camera_notebook = ttk.Notebook(self.top_paned, style='Content.TNotebook')
+        # Add custom style for notebook if needed, e.g., tab colors
+        style.configure('Content.TNotebook', background=COLOR_FRAME_BG)
+        style.configure('Content.TNotebook.Tab', background=COLOR_FRAME_BG, padding=[5, 2])
+        style.map('Content.TNotebook.Tab', 
+                  background=[('selected', COLOR_BACKGROUND), ('active', COLOR_FRAME_BG)],
+                  foreground=[('selected', COLOR_PRIMARY_ACCENT)])
 
-        self.control_panel = ControlPanel(self.top_paned, pid, siggen, set_status=status_update_method, style='Content.TFrame')
-        self.heatmap_view = HeatmapView(self.top_paned, camera, trend_graph=None, set_status=status_update_method, style='Content.TFrame')
-        # TrendGraph is also a content frame
+        self.heatmap_views = [] # Store references to all heatmap views
+        self._populate_camera_tabs()
+
         self.trend_graph = TrendGraph(main_content_frame, set_status=status_update_method, style='Content.TFrame')
-        self.heatmap_view.trend_graph = self.trend_graph  # wire up after creation
+        
+        # --- Wiring TrendGraph --- 
+        # Option 1: Link trend graph to the first camera if available
+        if self.heatmap_views: # If at least one heatmap view was created
+            self.heatmap_views[0].trend_graph = self.trend_graph 
+            # The HeatmapView.update_image() method pushes data to its self.trend_graph
+            # This means only the first camera's data will go to the trend graph with current HeatmapView logic.
+            # This will need to be made more dynamic if user can select which camera feeds the graph.
+        else:
+            # If no cameras, trend graph won't get data automatically from a heatmap view.
+            # It could still be used for loading data or other purposes.
+            pass 
 
-        self.top_paned.add(self.control_panel, weight=3) # Give CP a bit more initial space ~60%
-        self.top_paned.add(self.heatmap_view, weight=2) # ~40%
+        self.top_paned.add(self.control_panel, weight=1) # Control panel gets 1 part
+        self.top_paned.add(self.camera_notebook, weight=2) # Camera notebook gets 2 parts
 
-        # Bottom row: graph
         self.trend_graph.grid(row=2, column=0, sticky='nsew')
 
         main_content_frame.columnconfigure(0, weight=1)
@@ -110,6 +163,35 @@ class SenxorApp(ttk.Frame):
         
         # Configure trend graph export to use sample name from heatmap view
         self.trend_graph.export_btn.configure(command=self._export_trend_data_coordinated)
+
+        # --- Start hotplug monitor ---
+        self.camera_manager.start_hotplug_monitor(on_change=self._on_camera_hotplug)
+
+    def _populate_camera_tabs(self):
+        # Remove all tabs
+        for tab in self.camera_notebook.tabs():
+            self.camera_notebook.forget(tab)
+        self.heatmap_views.clear()
+        active_cameras = self.camera_manager.get_all_cameras()
+        if not active_cameras:
+            no_cam_frame = ttk.Frame(self.camera_notebook, style='Content.TFrame')
+            msg_label = ttk.Label(no_cam_frame, text="No cameras available or started.", style='Content.TLabel', font=('Segoe UI', 12))
+            msg_label.pack(padx=20, pady=20, expand=True, anchor='center')
+            self.camera_notebook.add(no_cam_frame, text="No Cameras")
+        else:
+            for i, cam_instance in enumerate(active_cameras):
+                tab_frame = ttk.Frame(self.camera_notebook, style='Content.TFrame')
+                heatmap_view_instance = HeatmapView(
+                    tab_frame,
+                    camera=cam_instance,
+                    trend_graph=None,
+                    set_status=self.status_bar_view.set_status,
+                    style='Content.TFrame'
+                )
+                heatmap_view_instance.pack(fill='both', expand=True)
+                self.heatmap_views.append(heatmap_view_instance)
+                tab_title = f"Camera {cam_instance.connected_port or f'ID-{i}'}"
+                self.camera_notebook.add(tab_frame, text=tab_title)
 
     def set_initial_pane_proportions(self):
         self.update_idletasks()
@@ -130,8 +212,30 @@ class SenxorApp(ttk.Frame):
 
     def _export_trend_data_coordinated(self):
         sample_name = ""
-        if hasattr(self, 'heatmap_view') and self.heatmap_view:
-            sample_name = self.heatmap_view.get_sample_number()
+        # If multiple heatmaps, which one provides the sample name?
+        # For now, use the first one if available, or let user select later.
+        if self.heatmap_views:
+            # Potentially get sample name from the currently selected tab's heatmap view
+            try:
+                selected_tab_index = self.camera_notebook.index(self.camera_notebook.select())
+                if 0 <= selected_tab_index < len(self.heatmap_views):
+                    sample_name = self.heatmap_views[selected_tab_index].get_sample_number()
+                else: # Fallback to first if selection is weird
+                    sample_name = self.heatmap_views[0].get_sample_number()
+            except tk.TclError: # If no tab is selected or notebook is empty
+                 if self.heatmap_views: # Fallback to first if any exist
+                    sample_name = self.heatmap_views[0].get_sample_number()
         
         if hasattr(self, 'trend_graph') and self.trend_graph:
             self.trend_graph.export_csv(sample_name=sample_name) 
+
+    def refresh_camera_tabs(self):
+        # This method can be safely called from the hotplug thread using after()
+        self.after(0, self._populate_camera_tabs)
+        # Optionally, update trend graph linkage, etc.
+        # You may want to re-link trend graph to the first available camera
+        # or keep the previous selection if possible.
+
+    def _on_camera_hotplug(self):
+        print("SenxorApp: Camera hotplug event detected. Refreshing camera tabs...")
+        self.refresh_camera_tabs() 

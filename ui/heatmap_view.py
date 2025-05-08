@@ -177,16 +177,34 @@ class HeatmapView(ttk.Frame):
         if not self.running:
             return
 
+        # self.camera is an instance of SenxorCamera passed during __init__
+        if not self.camera or not hasattr(self.camera, 'is_connected'): # Basic check for valid camera object
+            if self.set_status: self.set_status("HeatmapView: Invalid camera object.")
+            self._show_disconnected_placeholder() # Show placeholder
+            self.after_id = self.after(self.update_interval * 10, self.update_image) # Check much less frequently
+            return
+
         if not self.camera.is_connected:
             self._show_disconnected_placeholder()
             if self.set_status:
-                # Using a slightly different message to distinguish from frame read error
-                self.set_status("Camera not detected. Waiting for connection...") 
-            # Try to update image again, maybe camera will be connected
-            self.after_id = self.after(self.update_interval * 5, self.update_image) # Check less frequently
+                status_msg = f"Camera {self.camera.connected_port or self.camera._port or '(Unknown)'} not connected."
+                self.set_status(status_msg)
+            self.after_id = self.after(self.update_interval * 5, self.update_image)
+            return
+        
+        if not self.camera.is_streaming: # Check if the camera's software streaming loop is active
+            # This might happen if it was connected but streaming hasn't been started or was stopped.
+            # CameraManager should ideally ensure only streaming cameras are passed or handled.
+            # However, good to have a check here.
+            self._show_disconnected_placeholder()
+            if self.set_status:
+                status_msg = f"Camera {self.camera.connected_port or '(ID)'} connected but not streaming. Waiting..."
+                self.set_status(status_msg)
+            self.after_id = self.after(self.update_interval * 2, self.update_image) # Check a bit sooner
             return
 
-        frame, header = self.camera.read_frame()
+        # Use the new method for threaded acquisition
+        frame, header = self.camera.get_latest_frame_and_header()
         
         if frame is not None:
             # Successfully read a frame
