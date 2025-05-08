@@ -100,7 +100,47 @@ class HeatmapView(ttk.Frame):
 
         self.img_label.bind('<Configure>', self.on_img_label_resize)
         Tooltip(self.img_label, "Live thermal image. Drag the window divider to resize.")
+        self._create_disconnected_placeholder() # Create placeholder once
         self.update_image()
+
+    def _create_disconnected_placeholder(self):
+        # Create a placeholder image for when the camera is disconnected
+        ph_width = self.last_size[0] if self.last_size[0] > 50 else 400
+        ph_height = self.last_size[1] if self.last_size[1] > 50 else 310
+        # Ensure width and height are positive for np.zeros
+        ph_width = max(1, ph_width)
+        ph_height = max(1, ph_height)
+        
+        img = np.zeros((ph_height, ph_width, 3), dtype=np.uint8) # Black image
+        msg = "Camera Disconnected"
+        font = cv.FONT_HERSHEY_SIMPLEX
+        
+        # Calculate text size and position carefully
+        try:
+            text_size = cv.getTextSize(msg, font, 1, 2)[0]
+            text_x = (img.shape[1] - text_size[0]) // 2
+            text_y = (img.shape[0] + text_size[1]) // 2
+            # Ensure text coordinates are positive
+            text_x = max(0, text_x)
+            text_y = max(0, text_y)
+            cv.putText(img, msg, (text_x, text_y), font, 1, (255, 255, 255), 2)
+        except Exception as e:
+            print(f"Error creating placeholder text: {e}") # Log error
+
+        img_pil = Image.fromarray(img)
+        self.disconnected_img_tk = ImageTk.PhotoImage(img_pil)
+
+    def _show_disconnected_placeholder(self):
+        # Update placeholder if size changed
+        current_w, current_h = self.img_label.winfo_width(), self.img_label.winfo_height()
+        # Check if winfo_width/height are valid (usually > 0 after window is shown)
+        if current_w > 1 and current_h > 1 and (self.last_size[0] != current_w or self.last_size[1] != current_h):
+            self.last_size = (current_w, current_h)
+            self._create_disconnected_placeholder() # Recreate with current size
+        
+        self.img_label.imgtk = self.disconnected_img_tk
+        self.img_label.configure(image=self.disconnected_img_tk)
+        self.last_frame = None # Clear last valid frame
 
     def get_sample_number(self) -> str:
         return self.sample_number_var.get().strip()
@@ -122,31 +162,84 @@ class HeatmapView(ttk.Frame):
 
     def on_img_label_resize(self, event):
         w, h = event.width, event.height
-        if w < 50 or h < 50:
+        if w < 10 or h < 10: # Reduced minimum size slightly
             return
         self.last_size = (w, h)
+        self._create_disconnected_placeholder() # Re-create placeholder on resize to fit new size
         if self.last_frame is not None:
             self.render_frame(self.last_frame, size=(w, h))
+        elif not self.camera.is_connected: # If camera is disconnected, show updated placeholder
+            self._show_disconnected_placeholder()
+        # If camera is connected but last_frame is None (e.g. initial state before first frame)
+        # it will be handled by update_image subsequently.
 
     def update_image(self):
         if not self.running:
             return
+
+        if not self.camera.is_connected:
+            self._show_disconnected_placeholder()
+            if self.set_status:
+                # Using a slightly different message to distinguish from frame read error
+                self.set_status("Camera not detected. Waiting for connection...") 
+            # Try to update image again, maybe camera will be connected
+            self.after_id = self.after(self.update_interval * 5, self.update_image) # Check less frequently
+            return
+
         frame, header = self.camera.read_frame()
+        
         if frame is not None:
+            # Successfully read a frame
+            if hasattr(self, 'disconnected_img_tk') and self.img_label.cget('image') == str(self.disconnected_img_tk):
+                # If we were showing placeholder, clear it by rendering the new frame
+                pass # The normal render_frame path will replace the placeholder
+            
+            if self.set_status:
+                 # Clear potential previous "disconnected" or "error" message
+                status_msg = "Streaming..."
+                if header and 'frame_counter' in header:
+                    status_msg = f"Frame {header['frame_counter']}"
+                elif header and 'timestamp' in header: # Example of another header key
+                    status_msg = f"Frame @ {header['timestamp']}"
+                self.set_status(status_msg)
+
             self.last_frame = frame.copy()
             self.render_frame(frame, size=self.last_size)
+            
             # Push data to trend graph
             min_temp = np.min(frame)
             max_temp = np.max(frame)
             avg_temp = np.mean(frame)
             if self.trend_graph:
-                # Add current hot, cold, and average temperatures to the trend graph
-                # TODO: Get actual voltage if available
-                current_voltage = 0.0 # Placeholder for voltage
+                current_voltage = 0.0 # Placeholder
                 self.trend_graph.add_point(max_temp, min_temp, avg_temp, current_voltage)
-        self.after_id = self.after(self.update_interval, self.update_image)
+            
+            # Schedule next normal update
+            self.after_id = self.after(self.update_interval, self.update_image)
+
+        else: 
+            # Frame is None. Camera.is_connected was true, so this is a read error.
+            self._show_disconnected_placeholder() # Show placeholder on error too
+            if self.set_status:
+                self.set_status("Error reading frame from camera. Retrying...")
+            # Schedule next attempt
+            self.after_id = self.after(self.update_interval, self.update_image) 
 
     def render_frame(self, frame, size=(400, 310)):
+        if frame is None: # Safeguard
+            # This should ideally not be hit if update_image is correctly handling None frames
+            if self.camera.is_connected:
+                # If camera is supposed to be connected, but frame is None, show error placeholder
+                if self.set_status: self.set_status("Render error: Frame is None.")
+            self._show_disconnected_placeholder() 
+            return
+        
+        # Ensure frame is not empty and is a numpy array before processing
+        if not isinstance(frame, np.ndarray) or frame.size == 0:
+            if self.set_status: self.set_status("Render error: Invalid frame data.")
+            self._show_disconnected_placeholder() # Show placeholder for invalid data
+            return
+            
         min_temp = np.min(frame)
         max_temp = np.max(frame)
         # avg_temp = np.mean(frame) # Not used directly in this function

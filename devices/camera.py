@@ -14,10 +14,19 @@ class SenxorCamera:
     """
 
     def __init__(self, port: str = None, stream_fps: int = 15, *, with_header: bool = True):
+        self.is_connected = False # Initialize connection status
+        self._port = None
         # Auto-detect port if not specified or set to 'auto'
         if not port or port.lower() == 'auto':
-            port = self._autodetect_port()
-        self._port = port.upper() if port else None
+            try:
+                self._port = self._autodetect_port()
+            except RuntimeError:
+                # self._port remains None, will be handled in _connect
+                print("Camera auto-detection failed. Proceeding without camera.") # Or use logging
+                pass # Keep self._port as None
+        else:
+            self._port = port.upper()
+
         self._stream_fps = stream_fps
         self._with_header = with_header
         self.mi48 = None  # will be initialised by _connect()
@@ -25,7 +34,8 @@ class SenxorCamera:
         self.port_names = []
 
         self._connect()
-        self._configure()
+        if self.is_connected:
+            self._configure()
 
     def _autodetect_port(self):
         # Try to find a port with a Senxor/MI48 device
@@ -39,10 +49,14 @@ class SenxorCamera:
     # ---------------------------------------------------------------------
     def read_raw(self):
         """Return the raw (1-D numpy array) sample and header from the camera."""
+        if not self.is_connected or self.mi48 is None:
+            return None, None
         return self.mi48.read()
 
     def read_frame(self):
         """Return a 2-D temperature frame (shape 80×62) and header."""
+        if not self.is_connected: # Added check
+            return None, None
         data, header = self.read_raw()
         if data is None:
             return None, header
@@ -50,26 +64,37 @@ class SenxorCamera:
         return frame, header
 
     def stop(self):
-        if self.mi48 is not None:
+        if self.is_connected and self.mi48 is not None:
             self.mi48.stop()
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
     def _connect(self):
+        if self._port is None: # If auto-detection failed or no port was specified
+            print("No camera port specified or detected. Cannot connect.") # Or use logging
+            self.is_connected = False
+            return
+
         mi48, connected_port, port_names = connect_senxor(src=self._port)
         self.port_names = port_names
         self.connected_port = connected_port
 
         if mi48 is None:
-            raise ConnectionError(
-                f"Failed to connect to the Senxor device on {self._port}.\n"
+            # Instead of raising error, set is_connected to False
+            print( # Or use logging
+                f"Failed to connect to the Senxor device on {self._port}.\\n"
                 f"Detected Senxor ports: {', '.join(port_names) if port_names else 'None'}"
             )
+            self.is_connected = False
+            return # Exit without raising an error
         self.mi48 = mi48
+        self.is_connected = True
 
     def _configure(self):
         """Apply sensible default configuration for streaming mode."""
+        if not self.is_connected or self.mi48 is None: # Added check
+            return
         m = self.mi48
         m.set_fps(self._stream_fps)
         # Disable default filters – we do our own filtering post-acquisition.
