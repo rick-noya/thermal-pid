@@ -7,7 +7,7 @@ class TemperaturePID(PID):
     def __init__(self, kp=1.0, ki=0.1, kd=0.05, setpoint=60.0, v_limits=(0.0, 10.0),
                  data_aggregator: DataAggregator = None,
                  pid_camera_indices: list[int] = None, # e.g., [0] for first camera, None for all
-                 pid_aggregation_mode: str = 'average_mean', # e.g., 'average_mean', 'overall_max'
+                 pid_aggregation_mode: str = 'overall_max', # Changed default to overall_max
                  sample_time=0.1):
         
         super().__init__(kp, ki, kd, setpoint=setpoint, output_limits=v_limits, sample_time=sample_time)
