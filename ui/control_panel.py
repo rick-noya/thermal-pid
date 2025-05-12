@@ -22,21 +22,21 @@ class ControlPanel(ttk.LabelFrame):
         # Store available cameras for mapping display names to indices
         self._available_cameras_map = {}
 
-        # --- PID Controls Section ---
-        pid_frame = ttk.Frame(self, padding=(5,5), style='Content.TFrame') # Use Content.TFrame if TLabelframe bg is different
-        pid_frame.grid(row=0, column=0, sticky='ew', padx=5, pady=5)
-        # pid_frame.columnconfigure(tuple(range(4)), weight=1) # Distribute space within PID frame
+        # --- PID Parameters Section ---
+        pid_params_frame = ttk.LabelFrame(self, text="PID Parameters", style='TLabelframe', padding=(5,5))
+        pid_params_frame.grid(row=0, column=0, sticky='ew', padx=5, pady=5)
+        pid_params_frame.columnconfigure(1, weight=1) # Give spinbox column more weight
 
         # Row 0: Setpoint
-        ttk.Label(pid_frame, text="Setpoint (°C):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        ttk.Label(pid_params_frame, text="Setpoint (°C):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
         self.setpoint_var = tk.DoubleVar(value=pid.setpoint)
-        self.setpoint_spin = ttk.Spinbox(pid_frame, from_=0, to=200, increment=0.5, textvariable=self.setpoint_var, width=8)
+        self.setpoint_spin = ttk.Spinbox(pid_params_frame, from_=0, to=200, increment=0.5, textvariable=self.setpoint_var, width=8)
         self.setpoint_spin.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
         Tooltip(self.setpoint_spin, "Target temperature for PID control.")
 
         # Row 1: PID Gains (Kp, Ki, Kd)
-        gains_frame = ttk.Frame(pid_frame, style='Content.TFrame')
-        gains_frame.grid(row=1, column=0, columnspan=4, sticky='ew', pady=5)
+        gains_frame = ttk.Frame(pid_params_frame, style='Content.TFrame')
+        gains_frame.grid(row=1, column=0, columnspan=2, sticky='ew', pady=5) # Span 2 columns
 
         ttk.Label(gains_frame, text="Kp:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=2)
         self.kp_var = tk.DoubleVar(value=pid.Kp)
@@ -55,63 +55,62 @@ class ControlPanel(ttk.LabelFrame):
         self.kd_spin = ttk.Spinbox(gains_frame, from_=0, to=100, increment=0.01, textvariable=self.kd_var, width=7)
         self.kd_spin.grid(row=0, column=5, sticky='ew', padx=5, pady=2)
         Tooltip(self.kd_spin, "Derivative gain for PID controller.")
-        for i in range(6): gains_frame.columnconfigure(i, weight=1, uniform="gains")
+        for i in range(6): gains_frame.columnconfigure(i, weight=1, uniform="gains") # Distribute space in gains frame
 
-        # Row 2: PID Actions
-        actions_frame = ttk.Frame(pid_frame, style='Content.TFrame')
-        actions_frame.grid(row=2, column=0, columnspan=4, sticky='ew', pady=5)
+        # Row 2: Update PID Button (directly in params frame)
+        self.update_pid_btn = ttk.Button(pid_params_frame, text="Update PID Params", command=self.update_pid)
+        self.update_pid_btn.grid(row=2, column=0, columnspan=2, padx=5, pady=(10,5), sticky='ew') # Span 2 columns
+        Tooltip(self.update_pid_btn, "Apply the current PID parameters (Setpoint, Kp, Ki, Kd).")
 
-        self.update_pid_btn = ttk.Button(actions_frame, text="Update PID", command=self.update_pid)
-        self.update_pid_btn.grid(row=0, column=0, padx=5, pady=2, sticky='ew')
-        Tooltip(self.update_pid_btn, "Apply the current PID parameters.")
+        # --- PID Input Source & Control Section ---
+        pid_control_frame = ttk.LabelFrame(self, text="PID Input & Control", style='TLabelframe', padding=(5,5))
+        pid_control_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=(10,5)) # Grid in main panel now
+        pid_control_frame.columnconfigure(1, weight=1) # Allow comboboxes/controls to expand
 
-        self.pid_enable_var = tk.BooleanVar(value=True)
-        self.enable_pid_chk = ttk.Checkbutton(actions_frame, text="Enable PID", variable=self.pid_enable_var, command=self.toggle_pid_controls)
-        self.enable_pid_chk.grid(row=0, column=1, padx=5, pady=2, sticky='w')
-        Tooltip(self.enable_pid_chk, "Enable or disable PID control.")
-
-        self.start_pid_btn = ttk.Button(actions_frame, text="Start PID", command=self.start_ramp, style='Primary.TButton')
-        self.start_pid_btn.grid(row=0, column=2, padx=5, pady=2, sticky='ew')
-        Tooltip(self.start_pid_btn, "Start PID control loop.")
-
-        self.stop_pid_btn = ttk.Button(actions_frame, text="Stop PID", command=self.stop_all)
-        self.stop_pid_btn.grid(row=0, column=3, padx=5, pady=2, sticky='ew')
-        Tooltip(self.stop_pid_btn, "Stop PID control and set output to 0V.")
-        for i in range(4): actions_frame.columnconfigure(i, weight=1, uniform="actions")
-        pid_frame.columnconfigure(0, weight=1)
-        pid_frame.columnconfigure(1, weight=2) # Spinbox gets more space
-
-        # --- PID Input Source Configuration Section ---
-        pid_source_frame = ttk.LabelFrame(pid_frame, text="PID Input Source", style='TLabelframe', padding=(5,5))
-        pid_source_frame.grid(row=1, column=0, sticky='ew', padx=0, pady=(10,5))
-        pid_source_frame.columnconfigure(1, weight=1) # Allow comboboxes to expand
-
-        ttk.Label(pid_source_frame, text="Source Camera(s):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        # Row 0: Source Camera
+        ttk.Label(pid_control_frame, text="Source Camera(s):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
         self.pid_cam_source_var = tk.StringVar()
-        self.pid_cam_source_combo = ttk.Combobox(pid_source_frame, textvariable=self.pid_cam_source_var, state='readonly', width=25)
-        self.pid_cam_source_combo.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
+        self.pid_cam_source_combo = ttk.Combobox(pid_control_frame, textvariable=self.pid_cam_source_var, state='readonly', width=25)
+        self.pid_cam_source_combo.grid(row=0, column=1, columnspan=3, sticky='ew', padx=5, pady=5) # Span 3 to align with buttons below
         Tooltip(self.pid_cam_source_combo, "Select camera(s) to use for PID input.")
         self.pid_cam_source_combo.bind('<<ComboboxSelected>>', self._update_pid_input_source)
 
-        ttk.Label(pid_source_frame, text="Aggregation Mode:", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        # Row 1: Aggregation Mode
+        ttk.Label(pid_control_frame, text="Aggregation Mode:", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
         self.pid_agg_mode_var = tk.StringVar()
-        # Define available aggregation modes from DataAggregator (or a predefined list)
-        self.AGGREGATION_MODES = ['average_mean', 'overall_max', 'first_valid_mean'] 
-        # Add 'individual_means', 'individual_maxs' if PID logic can handle list input directly, 
-        # or if we want to pick the first element from them.
-        # Current PID takes first from list, so they are usable.
-        # self.AGGREGATION_MODES.extend(['individual_means', 'individual_maxs'])
-        self.pid_agg_mode_combo = ttk.Combobox(pid_source_frame, textvariable=self.pid_agg_mode_var, values=self.AGGREGATION_MODES, state='readonly', width=25)
-        self.pid_agg_mode_combo.grid(row=1, column=1, sticky='ew', padx=5, pady=5)
+        self.AGGREGATION_MODES = ['average_mean', 'overall_max', 'first_valid_mean']
+        self.pid_agg_mode_combo = ttk.Combobox(pid_control_frame, textvariable=self.pid_agg_mode_var, values=self.AGGREGATION_MODES, state='readonly', width=25)
+        self.pid_agg_mode_combo.grid(row=1, column=1, columnspan=3, sticky='ew', padx=5, pady=5) # Span 3
         Tooltip(self.pid_agg_mode_combo, "Select how data from selected camera(s) is aggregated for PID.")
         self.pid_agg_mode_combo.bind('<<ComboboxSelected>>', self._update_pid_input_source)
+
+        # Row 2: PID Actions (Enable, Start, Stop)
+        actions_control_frame = ttk.Frame(pid_control_frame, style='Content.TFrame') # Subframe for buttons
+        actions_control_frame.grid(row=2, column=0, columnspan=4, sticky='ew', pady=(10, 5))
+
+        self.pid_enable_var = tk.BooleanVar(value=True)
+        self.enable_pid_chk = ttk.Checkbutton(actions_control_frame, text="Enable PID", variable=self.pid_enable_var, command=self.toggle_pid_controls)
+        self.enable_pid_chk.grid(row=0, column=0, padx=5, pady=2, sticky='w')
+        Tooltip(self.enable_pid_chk, "Enable or disable PID control operation.")
+
+        self.start_pid_btn = ttk.Button(actions_control_frame, text="Start PID", command=self.start_ramp, style='Primary.TButton')
+        self.start_pid_btn.grid(row=0, column=1, padx=5, pady=2, sticky='ew')
+        Tooltip(self.start_pid_btn, "Start PID control loop using selected source.")
+
+        self.stop_pid_btn = ttk.Button(actions_control_frame, text="Stop PID", command=self.stop_all)
+        self.stop_pid_btn.grid(row=0, column=2, padx=5, pady=2, sticky='ew')
+        Tooltip(self.stop_pid_btn, "Stop PID control and set output to 0V.")
+        # Configure columns for button distribution
+        actions_control_frame.columnconfigure(0, weight=0) # Checkbox takes minimal space
+        actions_control_frame.columnconfigure(1, weight=1) # Start button expands
+        actions_control_frame.columnconfigure(2, weight=1) # Stop button expands
 
         self._populate_pid_camera_source_options()
         self._set_initial_pid_source_ui()
 
         # --- Signal Generator Controls Section ---
         sg_frame = ttk.LabelFrame(self, text="Signal Generator", style='TLabelframe', padding=(5,5))
-        sg_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=(10,5))
+        sg_frame.grid(row=2, column=0, sticky='ew', padx=5, pady=(10,5)) # Now row 2
         sg_frame.columnconfigure(tuple(range(6)), weight=1, uniform="sg_uniform") # Allow responsive columns
 
         # Connection part
@@ -212,15 +211,17 @@ class ControlPanel(ttk.LabelFrame):
         state = 'normal' if enabled else 'disabled'
         # Keep Update button always enabled to change params even if PID is not running
         self.start_pid_btn.configure(state=state)
-        self.stop_pid_btn.configure(state=state if enabled else 'disabled') # Stop btn also disabled if PID disabled
+        self.stop_pid_btn.configure(state=state if enabled else 'disabled') # Stop btn also disabled if PID disabled AND PID is not currently running (might want to allow stop if running but disabled)
         # Directly configure spinboxes
         self.setpoint_spin.configure(state=state)
         self.kp_spin.configure(state=state)
         self.ki_spin.configure(state=state)
         self.kd_spin.configure(state=state)
-        # Update button should be enabled if PID is enabled, or if values can be set even if not running
-        # For now, tied to PID enable state.
+        # Update button only makes sense if params are editable
         self.update_pid_btn.configure(state=state)
+        # Input source selection should probably be always enabled?
+        self.pid_cam_source_combo.configure(state='readonly') # Always readonly, state not changed here
+        self.pid_agg_mode_combo.configure(state='readonly') # Always readonly, state not changed here
 
     def open_serial(self):
         self.siggen._port = self.sg_port_var.get()
