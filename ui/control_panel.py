@@ -3,6 +3,8 @@ from tkinter import ttk
 from .utils import Tooltip
 import sys
 import os
+import serial.tools.list_ports
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir) # This gets the root of the project if ui is a subdir
 sys.path.insert(0, parent_dir)
@@ -113,12 +115,32 @@ class ControlPanel(ttk.LabelFrame):
         sg_frame.grid(row=2, column=0, sticky='ew', padx=5, pady=(10,5)) # Now row 2
         sg_frame.columnconfigure(tuple(range(6)), weight=1, uniform="sg_uniform") # Allow responsive columns
 
-        # Connection part
+        # --- Get available COM ports ---
+        available_ports = serial.tools.list_ports.comports()
+        port_names = [port.device for port in available_ports]
+        default_port = ""
+        # Try to find CH340 port
+        for port in available_ports:
+            if "ch340" in port.description.lower():
+                default_port = port.device
+                break
+        # Fallback logic if no CH340 found
+        if not default_port:
+            current_siggen_port = self.siggen._port if self.siggen._port else ""
+            if current_siggen_port and current_siggen_port in port_names:
+                default_port = current_siggen_port
+            elif port_names:
+                default_port = port_names[0] # Fallback to first available port
+            # else: default_port remains "" if no ports found
+
+        # Connection part - Modify Port Entry to Combobox
         ttk.Label(sg_frame, text="Port:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        self.sg_port_var = tk.StringVar(value=self.siggen._port if self.siggen._port else "COM3")
-        self.port_entry = ttk.Entry(sg_frame, textvariable=self.sg_port_var, width=12)
-        self.port_entry.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
-        Tooltip(self.port_entry, "Serial port for the signal generator (e.g., COM8 or /dev/ttyUSB0).")
+        self.sg_port_var = tk.StringVar(value=default_port)
+        # Replace Entry with Combobox
+        self.port_combo = ttk.Combobox(sg_frame, textvariable=self.sg_port_var, values=port_names, state='readonly' if port_names else 'disabled', width=10)
+        self.port_combo.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
+        Tooltip(self.port_combo, "Select the serial port for the signal generator.")
+        # If using Combobox, consider adding a refresh button or handling dynamic changes. For now, populated at startup.
 
         ttk.Label(sg_frame, text="Baud:", style='Content.TLabel').grid(row=0, column=2, sticky='w', padx=5, pady=5)
         self.sg_baud_var = tk.IntVar(value=self.siggen._baud if self.siggen._baud else 9600)
@@ -128,11 +150,11 @@ class ControlPanel(ttk.LabelFrame):
 
         self.open_serial_btn = ttk.Button(sg_frame, text="Open", command=self.open_serial)
         self.open_serial_btn.grid(row=0, column=4, padx=5, pady=5, sticky='ew')
-        Tooltip(self.open_serial_btn, "Open the serial port for the signal generator.")
+        Tooltip(self.open_serial_btn, "Open the selected serial port.")
 
         self.close_serial_btn = ttk.Button(sg_frame, text="Close", command=self.close_serial, state='disabled')
         self.close_serial_btn.grid(row=0, column=5, padx=5, pady=5, sticky='ew')
-        Tooltip(self.close_serial_btn, "Close the serial port for the signal generator.")
+        Tooltip(self.close_serial_btn, "Close the serial port.")
 
         # Settings part (initially disabled)
         self.sg_settings_frame = ttk.Frame(sg_frame, style='Content.TFrame')
@@ -224,8 +246,13 @@ class ControlPanel(ttk.LabelFrame):
         self.pid_agg_mode_combo.configure(state='readonly') # Always readonly, state not changed here
 
     def open_serial(self):
-        self.siggen._port = self.sg_port_var.get()
+        self.siggen._port = self.sg_port_var.get() # Get port from Combobox variable
         self.siggen._baud = self.sg_baud_var.get()
+        if not self.siggen._port:
+            self.set_sg_status("No COM port selected.")
+            self.set_status("Please select a COM port.")
+            return
+        
         self.set_sg_status(f"Opening {self.siggen._port} at {self.siggen._baud} baud...")
         try:
             self.siggen.open()
@@ -234,7 +261,8 @@ class ControlPanel(ttk.LabelFrame):
             self.set_sg_status(status_msg) # SG status
             self.open_serial_btn.configure(state='disabled')
             self.close_serial_btn.configure(state='normal')
-            self.port_entry.configure(state='disabled')
+            # Disable port/baud selection after opening
+            self.port_combo.configure(state='disabled') 
             self.baud_entry.configure(state='disabled')
             self._toggle_sg_controls_enabled(True)
         except Exception as e:
@@ -253,7 +281,11 @@ class ControlPanel(ttk.LabelFrame):
             self.set_sg_status(status_msg)
             self.open_serial_btn.configure(state='normal')
             self.close_serial_btn.configure(state='disabled')
-            self.port_entry.configure(state='normal')
+            # Re-enable port/baud selection after closing
+            if self.port_combo['values']: # Only enable if there are ports to select
+                self.port_combo.configure(state='readonly') 
+            else:
+                self.port_combo.configure(state='disabled')
             self.baud_entry.configure(state='normal')
             self._toggle_sg_controls_enabled(False)
         except Exception as e:
@@ -300,10 +332,6 @@ class ControlPanel(ttk.LabelFrame):
                 self.set_status("PID stopped. SigGen output set to 0V and OFF.")
         except Exception as e:
             self.set_status(f"PID stopped. SigGen error: {e}")
-
-    # ... (rest of the Signal Generator methods: set_frequency, increase_freq, etc.)
-    # These should check if self.siggen.is_open before acting, or rely on controls being disabled.
-    # Adding a check here for robustness.
 
     def _check_serial_open(self):
         if not self.siggen.is_open:

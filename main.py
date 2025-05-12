@@ -27,7 +27,7 @@ def main():
         **config.PID_DEFAULTS,
         data_aggregator=data_aggregator,
         pid_camera_indices=None,
-        pid_aggregation_mode='average_mean'
+        pid_aggregation_mode='overall_max'
     )
 
     siggen = SignalGenerator(
