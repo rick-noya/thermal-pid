@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
+from tkinter import Canvas
 from .control_panel import ControlPanel
 from .heatmap_view import HeatmapView
 from .trend_graph import TrendGraph
@@ -44,6 +45,7 @@ class SenxorApp(ttk.Frame):
             # You might want to create a dummy aggregator or raise an error depending on desired robustness.
             # For now, ControlPanel will receive None and should handle it gracefully.
 
+        # Main application frame fills the master window
         self.pack(fill='both', expand=True)
 
         self.master.geometry('1300x750')
@@ -102,77 +104,140 @@ class SenxorApp(ttk.Frame):
                                 # borderwidth=1, relief='solid', bordercolor=COLOR_SECONDARY_ACCENT # Temporarily removed for testing
                                 )
 
-        # Main layout panels
-        main_content_frame = ttk.Frame(self, style='Content.TFrame')
-        main_content_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        # --- Scrollable Area Setup ---
+        # Outer frame to hold canvas and scrollbar
+        scroll_outer_frame = ttk.Frame(self, style='TFrame') 
+        scroll_outer_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        scroll_outer_frame.grid_rowconfigure(0, weight=1)
+        scroll_outer_frame.grid_columnconfigure(0, weight=1)
 
+        # Canvas widget
+        self.canvas = Canvas(scroll_outer_frame, bg=COLOR_FRAME_BG, highlightthickness=0) # Match content bg
+        self.canvas.grid(row=0, column=0, sticky='nsew')
+
+        # Vertical scrollbar
+        v_scrollbar = ttk.Scrollbar(scroll_outer_frame, orient='vertical', command=self.canvas.yview)
+        v_scrollbar.grid(row=0, column=1, sticky='ns')
+        self.canvas.configure(yscrollcommand=v_scrollbar.set)
+
+        # Frame inside the canvas that will contain the actual content
+        # This is the frame that will be scrolled.
+        self.scrollable_inner_frame = ttk.Frame(self.canvas, style='Content.TFrame')
+        self.canvas.create_window((0, 0), window=self.scrollable_inner_frame, anchor='nw', tags="scrollable_frame")
+
+        # Update scrollregion when the inner frame size changes
+        self.scrollable_inner_frame.bind("<Configure>", self._on_inner_frame_configure)
+        
+        # Bind mouse wheel scrolling (platform-dependent)
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel) # Windows/macOS
+        self.canvas.bind_all("<Button-4>", self._on_mousewheel)    # Linux (scroll up)
+        self.canvas.bind_all("<Button-5>", self._on_mousewheel)    # Linux (scroll down)
+
+        # --- Content Layout within the Scrollable Frame ---
+        # Previously `main_content_frame`, now put content into `scrollable_inner_frame`
+        # Let's rename main_content_frame to scrollable_inner_frame for clarity in this edit block
+        main_content_frame = self.scrollable_inner_frame # Content now goes here
+
+        # Status bar
         self.status_bar_view = StatusBarView(main_content_frame, style='TFrame')
         self.status_bar_view.grid(row=0, column=0, sticky='ew', pady=(0,5))
-
         status_update_method = self.status_bar_view.set_status
 
-        # Top row: PanedWindow for control panel and the new camera display area
+        # Top row: PanedWindow for control panel and the camera display area
         self.top_paned = ttk.PanedWindow(main_content_frame, orient='horizontal')
         self.top_paned.grid(row=1, column=0, sticky='nsew', pady=(0,10))
 
-        # Pass camera_manager and data_aggregator to ControlPanel
+        # Control Panel
         self.control_panel = ControlPanel(self.top_paned, 
                                           pid=self.pid, 
                                           siggen=self.siggen, 
                                           camera_manager=self.camera_manager, 
-                                          data_aggregator=self.data_aggregator, # Pass the aggregator
+                                          data_aggregator=self.data_aggregator,
                                           set_status=status_update_method, 
                                           style='Content.TFrame')
         
-        # --- Camera Display Area (single pane, no tabs) ---
+        # Camera Display Area Frame
         self.camera_frame = ttk.Frame(self.top_paned, style='Content.TFrame')
 
-        # --- Master Camera Controls (single set for all cameras) ---
-        self._init_master_camera_controls(style)
+        # Initialize Master Camera Controls (if needed, ensure parent is correct frame)
+        # This method likely adds widgets to self.camera_frame, which is okay
+        self._init_master_camera_controls(style) 
 
-        # Store references to all heatmap views for later access
         self.heatmap_views = []
-        # Populate after the layout is in place to ensure accurate dimensions
+        # Populate cameras after layout (no change needed here)
         self.after(0, self._populate_camera_views)
 
+        # Trend Graph
         self.trend_graph = TrendGraph(main_content_frame, set_status=status_update_method, style='Content.TFrame')
         
         # --- Wiring TrendGraph --- 
-        # Option 1: Link trend graph to the first camera if available
-        if self.heatmap_views: # If at least one heatmap view was created
+        # (No change needed here)
+        if self.heatmap_views:
             self.heatmap_views[0].trend_graph = self.trend_graph 
-            # The HeatmapView.update_image() method pushes data to its self.trend_graph
-            # This means only the first camera's data will go to the trend graph with current HeatmapView logic.
-            # This will need to be made more dynamic if user can select which camera feeds the graph.
         else:
-            # If no cameras, trend graph won't get data automatically from a heatmap view.
-            # It could still be used for loading data or other purposes.
             pass 
 
-        self.top_paned.add(self.control_panel, weight=1)  # Control panel gets 1 part
-        self.top_paned.add(self.camera_frame,   weight=2)  # Camera area gets 2 parts
+        # Add panels to PanedWindow
+        self.top_paned.add(self.control_panel, weight=1)
+        self.top_paned.add(self.camera_frame,   weight=2)
 
+        # Position Trend Graph
         self.trend_graph.grid(row=2, column=0, sticky='nsew')
 
+        # Configure resizing behavior *within* the scrollable frame
         main_content_frame.columnconfigure(0, weight=1)
         main_content_frame.rowconfigure(0, weight=0)  # Status bar - no vertical expansion
-        main_content_frame.rowconfigure(1, weight=3)  # Paned window (CP + Heatmap)
-        main_content_frame.rowconfigure(2, weight=2)  # Trend graph
+        main_content_frame.rowconfigure(1, weight=1)  # Paned window (CP + Heatmap) - Give it weight 1
+        main_content_frame.rowconfigure(2, weight=1)  # Trend graph - Give it weight 1
 
-        # Set initial PanedWindow sash position after widgets are drawn
+        # Set initial PanedWindow sash position
         self.after(100, self.set_initial_pane_proportions)
         
-        # Configure trend graph export to use sample name from heatmap view
+        # Configure trend graph export
         self.trend_graph.export_btn.configure(command=self._export_trend_data_coordinated)
 
         # --- Start hotplug monitor ---
         self.camera_manager.start_hotplug_monitor(on_change=self._on_camera_hotplug)
 
         # --- Start PID output loop ---
-        pid_sample_ms = max(10, int(self.pid.sample_time * 1000)) # Ensure minimum delay
+        pid_sample_ms = max(10, int(self.pid.sample_time * 1000))
         self.after(pid_sample_ms, self._update_pid_output)
 
-        self.last_pid_output_time = 0 # To avoid updating siggen too frequently if sample_time is very small
+        self.last_pid_output_time = 0
+        
+        # Bind canvas width change to update the inner frame width for proper layout
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+
+        # --- Settings Dropdown Panel ---
+        self.settings_panel_visible = False
+        self._create_settings_dropdown_panel(style)
+        
+        # Add a settings button to the top right of the scrollable_inner_frame
+        self.settings_btn = ttk.Button(self.scrollable_inner_frame, text='⚙ Settings', command=self._toggle_settings_panel, style='TButton')
+        self.settings_btn.grid(row=0, column=1, sticky='ne', padx=(0,10), pady=(0,5))
+        # Adjust status bar to only take left side
+        self.status_bar_view.grid_configure(sticky='w', column=0)
+        self.scrollable_inner_frame.grid_columnconfigure(1, weight=0)
+
+    def _on_canvas_configure(self, event):
+        """Dynamically set the width of the inner frame to match the canvas width."""
+        canvas_width = event.width
+        self.canvas.itemconfig("scrollable_frame", width=canvas_width)
+
+    def _on_inner_frame_configure(self, event):
+        """Update the scrollregion of the canvas to encompass the inner frame."""
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _on_mousewheel(self, event):
+        """Handle mouse wheel scrolling across different platforms."""
+        if event.num == 4: # Linux scroll up
+            delta = -1 
+        elif event.num == 5: # Linux scroll down
+            delta = 1
+        else: # Windows/macOS
+            delta = -1 * int(event.delta / 120) # Normalize wheel delta
+        
+        self.canvas.yview_scroll(delta, "units")
 
     def _populate_camera_views(self):
         """Populate/refresh the camera display area with a stacked list of HeatmapViews.
@@ -408,3 +473,40 @@ class SenxorApp(ttk.Frame):
         # Save snapshot for each camera (or just first)
         if self.heatmap_views:
             self.heatmap_views[0].save_snapshot() 
+
+    def _create_settings_dropdown_panel(self, style):
+        self.settings_panel = ttk.Frame(self.scrollable_inner_frame, style='Content.TFrame', padding=(10,10))
+        self.settings_panel.grid(row=1, column=0, columnspan=2, sticky='ew', padx=10, pady=(0,10))
+        self.settings_panel.grid_remove()  # Hide by default
+        self.scrollable_inner_frame.grid_rowconfigure(1, weight=0)
+
+        # Colormap selector
+        ttk.Label(self.settings_panel, text='Colormap:', style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        cmap_menu = ttk.OptionMenu(self.settings_panel, self.colormap_var, self.colormap_var.get(), 'Jet','Hot','Magma','Inferno','Plasma','Viridis','Cividis','Twilight','Turbo')
+        cmap_menu.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
+
+        # Sample Number
+        ttk.Label(self.settings_panel, text='Sample #:', style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        ttk.Entry(self.settings_panel, textvariable=self.sample_number_var, width=12).grid(row=1, column=1, sticky='ew', padx=5, pady=5)
+
+        # Smoothing sliders
+        ttk.Label(self.settings_panel, text='Hot Spot Smooth (frames):', style='Content.TLabel').grid(row=2, column=0, sticky='w', padx=5, pady=5)
+        hot_slider = ttk.Scale(self.settings_panel, from_=1, to=30, variable=self.hot_smooth_len_var, orient='horizontal', length=120)
+        hot_slider.grid(row=2, column=1, sticky='ew', padx=5, pady=5)
+        ttk.Label(self.settings_panel, textvariable=self.hot_smooth_len_var, style='Content.TLabel', width=3).grid(row=2, column=2, sticky='w', padx=2)
+
+        ttk.Label(self.settings_panel, text='Cold Spot Smooth (frames):', style='Content.TLabel').grid(row=3, column=0, sticky='w', padx=5, pady=5)
+        cold_slider = ttk.Scale(self.settings_panel, from_=1, to=30, variable=self.cold_smooth_len_var, orient='horizontal', length=120)
+        cold_slider.grid(row=3, column=1, sticky='ew', padx=5, pady=5)
+        ttk.Label(self.settings_panel, textvariable=self.cold_smooth_len_var, style='Content.TLabel', width=3).grid(row=3, column=2, sticky='w', padx=2)
+
+        # Close button
+        close_btn = ttk.Button(self.settings_panel, text='Close', command=self._toggle_settings_panel, style='TButton')
+        close_btn.grid(row=4, column=0, columnspan=3, pady=(10,0))
+
+    def _toggle_settings_panel(self):
+        self.settings_panel_visible = not self.settings_panel_visible
+        if self.settings_panel_visible:
+            self.settings_panel.grid()
+        else:
+            self.settings_panel.grid_remove() 
