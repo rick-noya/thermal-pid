@@ -43,9 +43,6 @@ class HeatmapView(ttk.Frame):
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
 
-        # --- Rotation state ---
-        self.rotation = 0  # Degrees: 0, 90, 180, 270
-
         # --- Controls frame (optional) ---
         self.controls_frame = ttk.Frame(self, style='Content.TFrame', padding=(5,5))
         if show_controls:
@@ -58,17 +55,6 @@ class HeatmapView(ttk.Frame):
             self.controls_frame.columnconfigure(2, weight=0) # Sample Number (less weight, fixed size)
             self.controls_frame.columnconfigure(3, weight=1) # Colormap label + optionmenu
             self.controls_frame.columnconfigure(4, weight=1) # Snapshot button
-            self.controls_frame.columnconfigure(5, weight=0) # Rotation button
-
-        # Rotate button
-        if show_controls:
-            self.rotate_btn = ttk.Button(self.controls_frame, text="⟳ Rotate", command=self.rotate_view)
-            self.rotate_btn.grid(row=0, column=5, padx=5, pady=2, sticky='e')
-            Tooltip(self.rotate_btn, "Rotate the camera view 90° clockwise.")
-
-        # Hot/cold position history (deque for last N)
-        self.hot_history = deque(maxlen=10)
-        self.cold_history = deque(maxlen=10)
 
         self.img_label.bind('<Configure>', self.on_img_label_resize)
         Tooltip(self.img_label, "Live thermal image. Drag the window divider to resize.")
@@ -77,6 +63,10 @@ class HeatmapView(ttk.Frame):
         self.colormap_var = colormap_var
         self.hot_smooth_len_var = hot_smooth_len_var
         self.cold_smooth_len_var = cold_smooth_len_var
+
+        # Hot/cold position history (deque for last N)
+        self.hot_history = deque(maxlen=10)
+        self.cold_history = deque(maxlen=10)
 
         self._create_disconnected_placeholder() # Create placeholder once
         self.update_image()
@@ -248,26 +238,6 @@ class HeatmapView(ttk.Frame):
         color_img = cv.applyColorMap(norm, cmap_cv)
         color_img = cv.resize(color_img, size, interpolation=cv.INTER_LINEAR) # INTER_LINEAR is faster
         
-        # --- Apply rotation ---
-        def rotate_point(pt, shape, rotation):
-            h, w = shape[:2]
-            x, y = pt
-            if rotation == 90:
-                return (h - 1 - y, x)
-            elif rotation == 180:
-                return (w - 1 - x, h - 1 - y)
-            elif rotation == 270:
-                return (y, w - 1 - x)
-            else:
-                return (x, y)
-
-        if self.rotation == 90:
-            color_img = cv.rotate(color_img, cv.ROTATE_90_CLOCKWISE)
-        elif self.rotation == 180:
-            color_img = cv.rotate(color_img, cv.ROTATE_180)
-        elif self.rotation == 270:
-            color_img = cv.rotate(color_img, cv.ROTATE_90_COUNTERCLOCKWISE)
-
         show_hot = getattr(self, 'show_hot_spot_var', None)
         show_cold = getattr(self, 'show_cold_spot_var', None)
         show_hot = show_hot.get() if show_hot is not None else True
@@ -283,11 +253,8 @@ class HeatmapView(ttk.Frame):
                 max_loc = np.unravel_index(max_loc_flat, frame.shape)
                 min_pixel = np.array([min_loc[1] * scale_x, min_loc[0] * scale_y])
                 max_pixel = np.array([max_loc[1] * scale_x, max_loc[0] * scale_y])
-                # Rotate overlay points to match image rotation
-                min_pixel_rot = rotate_point(min_pixel, color_img.shape, self.rotation)
-                max_pixel_rot = rotate_point(max_pixel, color_img.shape, self.rotation)
-                self.hot_history.append(max_pixel_rot)
-                self.cold_history.append(min_pixel_rot)
+                self.hot_history.append(max_pixel)
+                self.cold_history.append(min_pixel)
                 if show_hot and len(self.hot_history) > 0:
                     hot_avg = np.mean(self.hot_history, axis=0)
                     hot_pos = (int(hot_avg[0]), int(hot_avg[1]))
@@ -344,8 +311,53 @@ class HeatmapView(ttk.Frame):
         elif not self.camera.is_connected:
             self._show_disconnected_placeholder() 
 
-    def rotate_view(self):
-        """Rotate the camera view by 90 degrees clockwise."""
-        self.rotation = (self.rotation + 90) % 360
-        if self.last_frame is not None:
-            self.render_frame(self.last_frame, size=self.last_size) 
+    # Rotate button
+    # if show_controls:
+    #     self.rotate_btn = ttk.Button(self.controls_frame, text="⟳ Rotate", command=self.rotate_view)
+    #     self.rotate_btn.grid(row=0, column=5, padx=5, pady=2, sticky='e')
+    #     Tooltip(self.rotate_btn, "Rotate the camera view 90° clockwise.")
+
+    # --- Apply rotation ---
+    # def rotate_point(pt, shape, rotation):
+    #     h, w = shape[:2]
+    #     x, y = pt
+    #     if rotation == 90:
+    #         return (h - 1 - y, x)
+    #     elif rotation == 180:
+    #         return (w - 1 - x, h - 1 - y)
+    #     elif rotation == 270:
+    #         return (y, w - 1 - x)
+    #     else:
+    #         return (x, y)
+    #
+    # if self.rotation == 90:
+    #     color_img = cv.rotate(color_img, cv.ROTATE_90_CLOCKWISE)
+    # elif self.rotation == 180:
+    #     color_img = cv.rotate(color_img, cv.ROTATE_180)
+    # elif self.rotation == 270:
+    #     color_img = cv.rotate(color_img, cv.ROTATE_90_COUNTERCLOCKWISE)
+    #
+    #     # Rotate overlay points to match image rotation
+    #     min_pixel_rot = rotate_point(min_pixel, color_img.shape, self.rotation)
+    #     max_pixel_rot = rotate_point(max_pixel, color_img.shape, self.rotation)
+    #     self.hot_history.append(max_pixel_rot)
+    #     self.cold_history.append(min_pixel_rot)
+    #
+    # if self.rotation == 90:
+    #     color_img = cv.rotate(color_img, cv.ROTATE_90_CLOCKWISE)
+    # elif self.rotation == 180:
+    #     color_img = cv.rotate(color_img, cv.ROTATE_180)
+    # elif self.rotation == 270:
+    #     color_img = cv.rotate(color_img, cv.ROTATE_90_COUNTERCLOCKWISE)
+    #
+    #     # Rotate overlay points to match image rotation
+    #     min_pixel_rot = rotate_point(min_pixel, color_img.shape, self.rotation)
+    #     max_pixel_rot = rotate_point(max_pixel, color_img.shape, self.rotation)
+    #     self.hot_history.append(max_pixel_rot)
+    #     self.cold_history.append(min_pixel_rot)
+
+    # def rotate_view(self):
+    #     """Rotate the camera view by 90 degrees clockwise."""
+    #     self.rotation = (self.rotation + 90) % 360
+    #     if self.last_frame is not None:
+    #         self.render_frame(self.last_frame, size=self.last_size) 
