@@ -99,7 +99,7 @@ class ControlPanel(ttk.LabelFrame):
         self.start_pid_btn.grid(row=0, column=1, padx=5, pady=2, sticky='ew')
         Tooltip(self.start_pid_btn, "Start PID control loop using selected source.")
 
-        self.stop_pid_btn = ttk.Button(actions_control_frame, text="Stop PID", command=self.stop_all)
+        self.stop_pid_btn = ttk.Button(actions_control_frame, text="Stop PID", command=self.stop_all, style='Primary.TButton')
         self.stop_pid_btn.grid(row=0, column=2, padx=5, pady=2, sticky='ew')
         Tooltip(self.stop_pid_btn, "Stop PID control and set output to 0V.")
         # Configure columns for button distribution
@@ -211,6 +211,10 @@ class ControlPanel(ttk.LabelFrame):
         self._toggle_sg_controls_enabled(False) # Initially disabled
         self.toggle_pid_controls() # Initial state based on checkbox
 
+        # PID starts in a paused state, so disable the "Stop PID" button until
+        # the user starts the loop.
+        self.stop_pid_btn.configure(state='disabled')
+
     def _toggle_sg_controls_enabled(self, enabled: bool):
         state = 'normal' if enabled else 'disabled'
         for widget in self.sg_interactive_widgets:
@@ -246,6 +250,16 @@ class ControlPanel(ttk.LabelFrame):
         self.set_sg_status(f"Opening {self.siggen._port} at {self.siggen._baud} baud...")
         try:
             self.siggen.open()
+            # Ensure the generator starts at 0 V so no unintended output is sent
+            try:
+                self.siggen.set_voltage(0.0)
+            except Exception as ve:
+                # If setting the voltage fails we still want to proceed, but notify the user
+                self.set_status(f"Warning: Failed to set initial 0 V ({ve})")
+            else:
+                # Reflect the 0 V in the voltage spin-box so the UI stays consistent
+                self.sg_voltage_var.set(0.0)
+
             status_msg = f"Opened {self.siggen._port} at {self.siggen._baud} baud."
             self.set_status(status_msg) # Main status
             self.set_sg_status(status_msg) # SG status

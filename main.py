@@ -30,6 +30,10 @@ def main():
         pid_aggregation_mode='overall_max'
     )
 
+    # Pause PID by default so no control output is generated until the user
+    # explicitly starts the loop from the UI (Start PID button).
+    pid.pause()
+
     siggen = SignalGenerator(
         port=config.DEFAULT_PORT_SIGGEN, 
         baud=config.SIGGEN_BAUD, 

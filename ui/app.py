@@ -210,7 +210,7 @@ class SenxorApp(ttk.Frame):
         # Add panels to PanedWindow
         self.top_paned.add(self.control_panel, weight=1)
         self.top_paned.add(self.camera_frame,   weight=2)
-
+        
         # --- Row 3: Trend Graph ---
         self.trend_graph = TrendGraph(self.scrollable_inner_frame, set_status=status_update_method, style='Content.TFrame')
         self.trend_graph.grid(row=3, column=0, columnspan=2, sticky='nsew')
@@ -340,8 +340,8 @@ class SenxorApp(ttk.Frame):
         # If tiles would exceed max height, shrink them proportionally
         if tile_h * rows + (rows + 1) * padding_px > max_total_h:
             if rows > 0:  # Avoid division by zero if rows is 0
-                tile_h = int((max_total_h - (rows + 1) * padding_px) / rows)
-                tile_w = max(1, int(tile_h / TILE_RATIO))
+             tile_h = int((max_total_h - (rows + 1) * padding_px) / rows)
+             tile_w = max(1, int(tile_h / TILE_RATIO))
             else:  # Should not happen if active_cameras is not empty
                 tile_h = 50  # Fallback
                 tile_w = int(tile_h / TILE_RATIO)
