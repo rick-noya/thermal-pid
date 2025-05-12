@@ -24,6 +24,7 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 from devices.camera_manager import CameraManager
 from devices.data_aggregator import DataAggregator # Added for type hinting if needed, SenxorApp already gets pid which has it
+import time # Added for PID output update timestamp
 
 
 class SenxorApp(ttk.Frame):
@@ -167,6 +168,12 @@ class SenxorApp(ttk.Frame):
         # --- Start hotplug monitor ---
         self.camera_manager.start_hotplug_monitor(on_change=self._on_camera_hotplug)
 
+        # --- Start PID output loop ---
+        pid_sample_ms = max(10, int(self.pid.sample_time * 1000)) # Ensure minimum delay
+        self.after(pid_sample_ms, self._update_pid_output)
+
+        self.last_pid_output_time = 0 # To avoid updating siggen too frequently if sample_time is very small
+
     def _populate_camera_tabs(self):
         # Remove all tabs
         for tab in self.camera_notebook.tabs():
@@ -239,3 +246,40 @@ class SenxorApp(ttk.Frame):
     def _on_camera_hotplug(self):
         print("SenxorApp: Camera hotplug event detected. Refreshing camera tabs...")
         self.refresh_camera_tabs() 
+
+    def _update_pid_output(self):
+        """Periodically calculates PID output and applies it to the signal generator."""
+        if not self.pid: # Safety check
+            return 
+
+        reschedule_delay_ms = max(10, int(self.pid.sample_time * 1000))
+
+        try:
+            if self.pid.auto_mode:
+                # Calculate PID output (must be called to update PID state)
+                voltage = self.pid() 
+
+                # Apply to signal generator if open and sufficient time has passed
+                if self.siggen and self.siggen.is_open:
+                    # Optional: Check time elapsed since last update to avoid flooding siggen
+                    # current_time = time.time()
+                    # if current_time - self.last_pid_output_time >= self.pid.sample_time:
+                    try:
+                        self.siggen.set_voltage(voltage)
+                        # self.last_pid_output_time = current_time # Update last sent time
+                        # Optional: Provide feedback via status bar?
+                        # self.set_status(f"PID Output: {voltage:.3f} V") 
+                    except Exception as e:
+                        self.set_status(f"SigGen Error: Failed to set voltage ({e})")
+                        print(f"SigGen Error: {e}") # Also print for debugging
+                
+                # Note: TrendGraph update happens in HeatmapView currently with placeholder voltage.
+                # If we want accurate voltage on the graph, we need to update it here or pass voltage down.
+                # Example: self.trend_graph.update_last_voltage(voltage) - requires TrendGraph modification.
+
+        except Exception as e:
+            self.set_status(f"PID Error: Failed during calculation/update ({e})")
+            print(f"PID Error: {e}")
+        finally:
+            # Reschedule the next update
+            self.after(reschedule_delay_ms, self._update_pid_output) 
