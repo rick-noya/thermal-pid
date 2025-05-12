@@ -266,7 +266,17 @@ class HeatmapView(ttk.Frame):
                     text_color_fg = (255,255,255)
                     text_color_bg = (0,0,0)
                     (text_w, text_h), _ = cv.getTextSize(text_hot, font_face, font_scale, thickness_text)
-                    text_org_hot = (hot_pos[0] + 10, hot_pos[1] - 10)
+                    x, y = hot_pos[0] + 10, hot_pos[1] - 10
+                    # Adjust if label would be cut off
+                    if x + text_w > color_img.shape[1]:
+                        x = hot_pos[0] - text_w - 10
+                    if x < 0:
+                        x = 0
+                    if y - text_h < 0:
+                        y = hot_pos[1] + text_h + 10
+                    if y > color_img.shape[0] - text_h:
+                        y = color_img.shape[0] - text_h
+                    text_org_hot = (x, y)
                     cv.putText(color_img, text_hot, text_org_hot, font_face, font_scale, text_color_bg, thickness_outline, cv.LINE_AA)
                     cv.putText(color_img, text_hot, text_org_hot, font_face, font_scale, text_color_fg, thickness_text, cv.LINE_AA)
                     cv.circle(color_img, hot_pos, 8, (0,0,255), 2)
