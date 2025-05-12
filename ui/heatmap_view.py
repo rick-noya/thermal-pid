@@ -249,6 +249,18 @@ class HeatmapView(ttk.Frame):
         color_img = cv.resize(color_img, size, interpolation=cv.INTER_LINEAR) # INTER_LINEAR is faster
         
         # --- Apply rotation ---
+        def rotate_point(pt, shape, rotation):
+            h, w = shape[:2]
+            x, y = pt
+            if rotation == 90:
+                return (h - 1 - y, x)
+            elif rotation == 180:
+                return (w - 1 - x, h - 1 - y)
+            elif rotation == 270:
+                return (y, w - 1 - x)
+            else:
+                return (x, y)
+
         if self.rotation == 90:
             color_img = cv.rotate(color_img, cv.ROTATE_90_CLOCKWISE)
         elif self.rotation == 180:
@@ -271,8 +283,11 @@ class HeatmapView(ttk.Frame):
                 max_loc = np.unravel_index(max_loc_flat, frame.shape)
                 min_pixel = np.array([min_loc[1] * scale_x, min_loc[0] * scale_y])
                 max_pixel = np.array([max_loc[1] * scale_x, max_loc[0] * scale_y])
-                self.hot_history.append(max_pixel)
-                self.cold_history.append(min_pixel)
+                # Rotate overlay points to match image rotation
+                min_pixel_rot = rotate_point(min_pixel, color_img.shape, self.rotation)
+                max_pixel_rot = rotate_point(max_pixel, color_img.shape, self.rotation)
+                self.hot_history.append(max_pixel_rot)
+                self.cold_history.append(min_pixel_rot)
                 if show_hot and len(self.hot_history) > 0:
                     hot_avg = np.mean(self.hot_history, axis=0)
                     hot_pos = (int(hot_avg[0]), int(hot_avg[1]))
