@@ -52,6 +52,9 @@ class SenxorApp(ttk.Frame):
         self.master.geometry('1300x750')
         self.master.title("Senxor Thermal Control & Analysis - Multi-Camera")
 
+        # Ensure signal generator is set to 0V on app close
+        self.master.protocol("WM_DELETE_WINDOW", self._on_app_close)
+
         # --- Modern Theme and Colors ---
         style = ttk.Style()
         style.theme_use('clam')
@@ -653,3 +656,11 @@ class SenxorApp(ttk.Frame):
 
         self.trend_graph.add_point(agg_max, agg_min, agg_avg, voltage)
         self.after(self.trend_graph_update_interval, self._update_trend_graph_aggregation) 
+
+    def _on_app_close(self):
+        try:
+            if hasattr(self, 'siggen') and self.siggen and getattr(self.siggen, 'is_open', False):
+                self.siggen.set_voltage(0.0)
+        except Exception as e:
+            print(f"Error setting signal generator to 0V on close: {e}")
+        self.master.destroy() 
