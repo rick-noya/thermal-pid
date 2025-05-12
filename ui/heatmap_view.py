@@ -259,9 +259,9 @@ class HeatmapView(ttk.Frame):
             min_temp = np.min(frame)
             max_temp = np.max(frame)
             avg_temp = np.mean(frame)
-            if self.trend_graph:
-                current_voltage = 0.0 # Placeholder
-                self.trend_graph.add_point(max_temp, min_temp, avg_temp, current_voltage)
+            # if self.trend_graph:
+            #     current_voltage = 0.0 # Placeholder
+            #     self.trend_graph.add_point(max_temp, min_temp, avg_temp, current_voltage)
             
             # Schedule next normal update
             self.after_id = self.after(self.update_interval, self.update_image)

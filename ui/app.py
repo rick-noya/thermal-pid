@@ -27,6 +27,7 @@ from devices.camera_manager import CameraManager
 from devices.data_aggregator import DataAggregator # Added for type hinting if needed, SenxorApp already gets pid which has it
 import time # Added for PID output update timestamp
 import math
+import numpy as np
 
 
 class SenxorApp(ttk.Frame):
@@ -176,14 +177,14 @@ class SenxorApp(ttk.Frame):
         self.top_paned.grid(row=2, column=0, columnspan=2, sticky='nsew', pady=(0,10))
 
         # Control Panel
-        self.control_panel = ControlPanel(self.top_paned,
-                                          pid=self.pid,
-                                          siggen=self.siggen,
-                                          camera_manager=self.camera_manager,
+        self.control_panel = ControlPanel(self.top_paned, 
+                                          pid=self.pid, 
+                                          siggen=self.siggen, 
+                                          camera_manager=self.camera_manager, 
                                           data_aggregator=self.data_aggregator,
-                                          set_status=status_update_method,
+                                          set_status=status_update_method, 
                                           style='Content.TFrame')
-
+        
         # Camera Display Area Frame
         self.camera_frame = ttk.Frame(self.top_paned, style='Content.TFrame')
         # Configure self.camera_frame to have a row for controls and a row for the camera grid
@@ -222,7 +223,7 @@ class SenxorApp(ttk.Frame):
 
         # Set initial PanedWindow sash position
         self.after(100, self.set_initial_pane_proportions)
-
+        
         # Configure trend graph export
         self.trend_graph.export_btn.configure(command=self._export_trend_data_coordinated)
 
@@ -254,6 +255,10 @@ class SenxorApp(ttk.Frame):
                 hv.update_image()  # Force redraw
         self.show_hot_spot_var.trace_add('write', _propagate_overlay)
         self.show_cold_spot_var.trace_add('write', _propagate_overlay)
+
+        # --- Trend Graph Aggregation Update ---
+        self.trend_graph_update_interval = 500  # ms
+        self.after(self.trend_graph_update_interval, self._update_trend_graph_aggregation)
 
     def _on_canvas_configure(self, event):
         """Dynamically set the width of the inner frame to match the canvas width."""
@@ -335,8 +340,8 @@ class SenxorApp(ttk.Frame):
         # If tiles would exceed max height, shrink them proportionally
         if tile_h * rows + (rows + 1) * padding_px > max_total_h:
             if rows > 0: # Avoid division by zero if rows is 0
-                tile_h = int((max_total_h - (rows + 1) * padding_px) / rows)
-                tile_w = max(1, int(tile_h / TILE_RATIO))
+            tile_h = int((max_total_h - (rows + 1) * padding_px) / rows)
+            tile_w = max(1, int(tile_h / TILE_RATIO))
             else: # Should not happen if active_cameras is not empty
                 tile_h = 50 # Fallback
                 tile_w = int(tile_h / TILE_RATIO)
@@ -577,3 +582,62 @@ class SenxorApp(ttk.Frame):
         # Force geometry update to reflect potential changes
         self.scrollable_inner_frame.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox("all")) 
+
+    def _update_trend_graph_aggregation(self):
+        """Aggregate camera data according to aggregation mode and update the trend graph."""
+        # Get aggregation mode from control panel (default to overall_max)
+        agg_mode = getattr(self.control_panel, 'pid_agg_mode_var', None)
+        if agg_mode is not None:
+            agg_mode = agg_mode.get()
+        if not agg_mode:
+            agg_mode = 'overall_max'
+
+        # Gather latest frames from all heatmap views
+        frames = []
+        for hv in self.heatmap_views:
+            if hv.last_frame is not None:
+                frames.append(hv.last_frame)
+        if not frames:
+            # No data to plot
+            self.after(self.trend_graph_update_interval, self._update_trend_graph_aggregation)
+            return
+
+        # Stack frames for aggregation
+        try:
+            stacked = np.stack(frames)
+        except Exception:
+            self.after(self.trend_graph_update_interval, self._update_trend_graph_aggregation)
+            return
+
+        # Compute aggregated values
+        if agg_mode == 'overall_max':
+            agg_max = float(np.max(stacked))
+            agg_min = float(np.min(stacked))
+            agg_avg = float(np.mean(stacked))
+        elif agg_mode == 'average_mean':
+            agg_max = float(np.mean(np.max(stacked, axis=(1,2))))
+            agg_min = float(np.mean(np.min(stacked, axis=(1,2))))
+            agg_avg = float(np.mean(stacked))
+        elif agg_mode == 'first_valid_mean':
+            # Use the first frame as the source
+            agg_max = float(np.max(stacked[0]))
+            agg_min = float(np.min(stacked[0]))
+            agg_avg = float(np.mean(stacked[0]))
+        else:
+            # Fallback to overall_max
+            agg_max = float(np.max(stacked))
+            agg_min = float(np.min(stacked))
+            agg_avg = float(np.mean(stacked))
+
+        # Voltage: if available from PID or siggen, otherwise 0.0
+        voltage = 0.0
+        if hasattr(self, 'siggen') and hasattr(self.siggen, 'get_voltage'):
+            try:
+                voltage = float(self.siggen.get_voltage())
+            except Exception:
+                voltage = 0.0
+        elif hasattr(self, 'pid') and hasattr(self.pid, 'last_output'):
+            voltage = float(getattr(self.pid, 'last_output', 0.0))
+
+        self.trend_graph.add_point(agg_max, agg_min, agg_avg, voltage)
+        self.after(self.trend_graph_update_interval, self._update_trend_graph_aggregation) 
