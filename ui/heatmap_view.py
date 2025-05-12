@@ -299,6 +299,10 @@ class HeatmapView(ttk.Frame):
         color_img = cv.applyColorMap(norm, cmap_cv)
         color_img = cv.resize(color_img, size, interpolation=cv.INTER_LINEAR) # INTER_LINEAR is faster
         
+        show_hot = getattr(self, 'show_hot_spot_var', None)
+        show_cold = getattr(self, 'show_cold_spot_var', None)
+        show_hot = show_hot.get() if show_hot is not None else True
+        show_cold = show_cold.get() if show_cold is not None else True
         # Hot/cold spot overlays
         if frame.size > 0: # Ensure frame is not empty
             scale_x = color_img.shape[1] / frame.shape[1]
@@ -310,40 +314,31 @@ class HeatmapView(ttk.Frame):
                 max_loc = np.unravel_index(max_loc_flat, frame.shape)
                 min_pixel = np.array([min_loc[1] * scale_x, min_loc[0] * scale_y])
                 max_pixel = np.array([max_loc[1] * scale_x, max_loc[0] * scale_y])
-                
                 self.hot_history.append(max_pixel)
                 self.cold_history.append(min_pixel)
-                
-                if len(self.hot_history) > 0:
+                if show_hot and len(self.hot_history) > 0:
                     hot_avg = np.mean(self.hot_history, axis=0)
                     hot_pos = (int(hot_avg[0]), int(hot_avg[1]))
-                    # Draw outlined text for hot spot
                     text_hot = f"{np.max(frame):.1f}0C"
                     font_face = cv.FONT_HERSHEY_SIMPLEX
                     font_scale = 0.6
                     thickness_text = 1
                     thickness_outline = 2
-                    text_color_fg = (255,255,255) # White
-                    text_color_bg = (0,0,0)     # Black
+                    text_color_fg = (255,255,255)
+                    text_color_bg = (0,0,0)
                     (text_w, text_h), _ = cv.getTextSize(text_hot, font_face, font_scale, thickness_text)
                     text_org_hot = (hot_pos[0] + 10, hot_pos[1] - 10)
-                    # Outline
                     cv.putText(color_img, text_hot, text_org_hot, font_face, font_scale, text_color_bg, thickness_outline, cv.LINE_AA)
-                    # Foreground
                     cv.putText(color_img, text_hot, text_org_hot, font_face, font_scale, text_color_fg, thickness_text, cv.LINE_AA)
-                    cv.circle(color_img, hot_pos, 8, (0,0,255), 2) # Red circle for hot
-
-                if len(self.cold_history) > 0:
+                    cv.circle(color_img, hot_pos, 8, (0,0,255), 2)
+                if show_cold and len(self.cold_history) > 0:
                     cold_avg = np.mean(self.cold_history, axis=0)
                     cool_pos = (int(cold_avg[0]), int(cold_avg[1]))
-                    # Draw outlined text for cold spot
                     text_cold = f"{np.min(frame):.1f}C"
                     text_org_cold = (cool_pos[0] + 10, cool_pos[1] - 10)
-                    # Outline
                     cv.putText(color_img, text_cold, text_org_cold, font_face, font_scale, text_color_bg, thickness_outline, cv.LINE_AA)
-                    # Foreground
                     cv.putText(color_img, text_cold, text_org_cold, font_face, font_scale, text_color_fg, thickness_text, cv.LINE_AA)
-                    cv.circle(color_img, cool_pos, 8, (255,0,0), 2) # Blue circle for cold
+                    cv.circle(color_img, cool_pos, 8, (255,0,0), 2)
 
         img_rgb = cv.cvtColor(color_img, cv.COLOR_BGR2RGB)
         img_pil = Image.fromarray(img_rgb)

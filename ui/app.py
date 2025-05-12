@@ -106,10 +106,12 @@ class SenxorApp(ttk.Frame):
 
         # --- Shared Camera View Settings Variables ---
         # Initialize these variables here to be used by both the settings panel and heatmap views
-        self.hot_smooth_len_var = tk.IntVar(value=10)
-        self.cold_smooth_len_var = tk.IntVar(value=10)
+        self.hot_smooth_len_var = tk.IntVar(value=30)  # Default to 30
+        self.cold_smooth_len_var = tk.IntVar(value=30) # Default to 30
         self.sample_number_var = tk.StringVar()
         self.colormap_var = tk.StringVar(value='Viridis')
+        self.show_hot_spot_var = tk.BooleanVar(value=True)
+        self.show_cold_spot_var = tk.BooleanVar(value=True)
 
         # Trace smoothing changes to update heatmap views
         def _propagate_smoothing(*args):
@@ -184,11 +186,24 @@ class SenxorApp(ttk.Frame):
 
         # Camera Display Area Frame
         self.camera_frame = ttk.Frame(self.top_paned, style='Content.TFrame')
+        # Configure self.camera_frame to have a row for controls and a row for the camera grid
+        self.camera_frame.rowconfigure(0, weight=0) # Row for master controls (snapshot button)
+        self.camera_frame.rowconfigure(1, weight=1) # Row for the actual camera grid
+        self.camera_frame.columnconfigure(0, weight=1) # Ensure the content can expand width-wise
 
-        # Initialize Master Camera Controls (Now only snapshot button)
+        # Initialize Master Camera Controls (Snapshot button etc.)
+        # This will place its controls_frame in self.camera_frame at row=0
         self._init_master_camera_controls(style)
 
+        # Create a dedicated frame for the grid of camera views
+        self.camera_grid_frame = ttk.Frame(self.camera_frame, style='Content.TFrame')
+        self.camera_grid_frame.grid(row=1, column=0, sticky='nsew')
+        # Ensure the grid frame itself also allows its internal grid to expand
+        self.camera_grid_frame.rowconfigure(0, weight=1) # Default, adjust in populate if multi-row cameras
+        self.camera_grid_frame.columnconfigure(0, weight=1) # Default, adjust in populate if multi-col cameras
+
         self.heatmap_views = []
+        # Populate cameras into self.camera_grid_frame
         self.after(0, self._populate_camera_views)
 
         # Add panels to PanedWindow
@@ -223,6 +238,23 @@ class SenxorApp(ttk.Frame):
         # Bind canvas width change to update the inner frame width
         self.canvas.bind("<Configure>", self._on_canvas_configure)
 
+        # Hot/Cold Spot Overlay Checkboxes
+        hot_chk = ttk.Checkbutton(self.settings_panel, text='Show Hot Spot Overlay', variable=self.show_hot_spot_var, style='TCheckbutton')
+        hot_chk.grid(row=4, column=0, columnspan=2, sticky='w', padx=5, pady=(10,2))
+        Tooltip(hot_chk, "Toggle the display of the hot spot marker on the heatmap.")
+        cold_chk = ttk.Checkbutton(self.settings_panel, text='Show Cold Spot Overlay', variable=self.show_cold_spot_var, style='TCheckbutton')
+        cold_chk.grid(row=5, column=0, columnspan=2, sticky='w', padx=5, pady=(2,10))
+        Tooltip(cold_chk, "Toggle the display of the cold spot marker on the heatmap.")
+
+        # Propagate overlay settings to all heatmap views
+        def _propagate_overlay(*args):
+            for hv in getattr(self, 'heatmap_views', []):
+                hv.show_hot_spot_var = self.show_hot_spot_var
+                hv.show_cold_spot_var = self.show_cold_spot_var
+                hv.update_image()  # Force redraw
+        self.show_hot_spot_var.trace_add('write', _propagate_overlay)
+        self.show_cold_spot_var.trace_add('write', _propagate_overlay)
+
     def _on_canvas_configure(self, event):
         """Dynamically set the width of the inner frame to match the canvas width."""
         canvas_width = event.width
@@ -244,11 +276,11 @@ class SenxorApp(ttk.Frame):
         self.canvas.yview_scroll(delta, "units")
 
     def _populate_camera_views(self):
-        """Populate/refresh the camera display area with a stacked list of HeatmapViews.
-        Each camera is shown in its own sub-frame with the COM-port label above the view."""
+        """Populate/refresh the camera display area with a stacked list of HeatmapViews
+        into the self.camera_grid_frame."""
 
-        # Clear previous widgets
-        for child in self.camera_frame.winfo_children():
+        # Clear previous widgets FROM THE CAMERA GRID FRAME ONLY
+        for child in self.camera_grid_frame.winfo_children():
             child.destroy()
 
         self.heatmap_views.clear()
@@ -256,7 +288,8 @@ class SenxorApp(ttk.Frame):
         active_cameras = self.camera_manager.get_all_cameras()
 
         if not active_cameras:
-            no_cam_frame = ttk.Frame(self.camera_frame, style='Content.TFrame')
+            # Place "No cameras" message inside the camera_grid_frame
+            no_cam_frame = ttk.Frame(self.camera_grid_frame, style='Content.TFrame')
             msg_label = ttk.Label(
                 no_cam_frame,
                 text="No cameras available or started.",
@@ -264,42 +297,59 @@ class SenxorApp(ttk.Frame):
                 font=('Segoe UI', 12)
             )
             msg_label.pack(padx=20, pady=20, expand=True, anchor='center')
-            no_cam_frame.pack(fill='both', expand=True)
+            no_cam_frame.pack(fill='both', expand=True) # Pack into no_cam_frame
+            # no_cam_frame needs to be gridded or packed into camera_grid_frame if not already
+            # If using pack above, ensure no_cam_frame expands in camera_grid_frame
+            # For consistency with grid elsewhere, let's grid it.
+            # no_cam_frame.grid(row=0, column=0, sticky='nsew') # This might conflict if camera_grid_frame uses grid later
+            # Simpler: just have the msg_label pack directly into camera_grid_frame if it's the only thing
+            # For robustness, let's ensure no_cam_frame is the one taking space in camera_grid_frame
+            self.camera_grid_frame.columnconfigure(0, weight=1)
+            self.camera_grid_frame.rowconfigure(0, weight=1)
+            no_cam_frame.grid(row=0, column=0, sticky='nsew')
             return
 
         # Determine tiling dimensions (max 2 columns)
         cols = min(2, len(active_cameras))
         rows = math.ceil(len(active_cameras) / cols)
 
-        # Ensure grid columns stretch evenly
+        # Ensure grid columns stretch evenly IN THE CAMERA GRID FRAME
         for c in range(cols):
-            self.camera_frame.columnconfigure(c, weight=1)
-        # +1 to account for controls row
-        for r in range(rows):
-            self.camera_frame.rowconfigure(r + 1, weight=1)
+            self.camera_grid_frame.columnconfigure(c, weight=1)
+        # Rows for cameras in CAMERA GRID FRAME
+        for r_idx in range(rows): # Renamed r to r_idx to avoid conflict with outer scope r if any
+            self.camera_grid_frame.rowconfigure(r_idx, weight=1)
+
 
         # Compute tile size respecting aspect ratio (80x62) and max half-screen height
-        self.update_idletasks()  # Get accurate frame width
-        available_w = max(1, self.camera_frame.winfo_width())
+        self.camera_grid_frame.update_idletasks()  # Get accurate frame width of camera_grid_frame
+        available_w = max(1, self.camera_grid_frame.winfo_width())
         padding_px = 10
         tile_w = max(1, int((available_w - (cols + 1) * padding_px) / cols))
         TILE_RATIO = 62 / 80  # height / width
         tile_h = max(1, int(tile_w * TILE_RATIO))
 
         screen_h = self.master.winfo_screenheight()
-        max_total_h = int(screen_h * 0.5)  # Half the screen height
+        max_total_h = int(screen_h * 0.4) # Limit camera view height a bit more if needed
 
         # If tiles would exceed max height, shrink them proportionally
         if tile_h * rows + (rows + 1) * padding_px > max_total_h:
-            tile_h = int((max_total_h - (rows + 1) * padding_px) / rows)
-            tile_w = max(1, int(tile_h / TILE_RATIO))
+            if rows > 0: # Avoid division by zero if rows is 0
+                tile_h = int((max_total_h - (rows + 1) * padding_px) / rows)
+                tile_w = max(1, int(tile_h / TILE_RATIO))
+            else: # Should not happen if active_cameras is not empty
+                tile_h = 50 # Fallback
+                tile_w = int(tile_h / TILE_RATIO)
+
 
         # Create a HeatmapView for each connected camera and position it on the grid
         for i, cam_instance in enumerate(active_cameras):
-            r, c = divmod(i, cols)
+            r_loop, c_loop = divmod(i, cols) # Renamed r, c to avoid conflict
 
-            camera_container = ttk.Frame(self.camera_frame, style='Content.TFrame', padding=(5, 5))
-            camera_container.grid(row=r + 1, column=c, sticky='nsew', padx=padding_px, pady=padding_px)  # +1 to leave row 0 for controls
+            # camera_container is now parented to self.camera_grid_frame
+            camera_container = ttk.Frame(self.camera_grid_frame, style='Content.TFrame', padding=(5, 5))
+            # Grid into self.camera_grid_frame
+            camera_container.grid(row=r_loop, column=c_loop, sticky='nsew', padx=padding_px, pady=padding_px)
 
             # COM-port / identifier label
             port_name = cam_instance.connected_port or f"ID-{i}"
@@ -327,6 +377,8 @@ class SenxorApp(ttk.Frame):
             heatmap_view_instance.cold_smooth_len_var = self.cold_smooth_len_var
             heatmap_view_instance.colormap_var = self.colormap_var
             heatmap_view_instance.sample_number_var = self.sample_number_var
+            heatmap_view_instance.show_hot_spot_var = self.show_hot_spot_var
+            heatmap_view_instance.show_cold_spot_var = self.show_cold_spot_var
 
             # Enforce target size & aspect ratio
             if hasattr(heatmap_view_instance, 'set_target_size'):
@@ -413,15 +465,12 @@ class SenxorApp(ttk.Frame):
 
     # ----------------- Master Controls (Simplified) -----------------
     def _init_master_camera_controls(self, style):
-        # This frame now sits ABOVE the camera views grid
-        # It only contains controls shared across all cameras that AREN'T in the settings panel.
-        # Currently, just the Snapshot button.
+        # This frame now sits ABOVE the camera views grid (self.camera_grid_frame)
+        # It is placed in self.camera_frame at row=0.
 
-        # We still need the shared variables initialized (moved to __init__)
-        # We still need the propagation traces set (moved to __init__)
-
+        # controls_frame is parented to self.camera_frame (the overall container for this section)
         controls_frame = ttk.Frame(self.camera_frame, style='Content.TFrame', padding=(5,5))
-        controls_frame.grid(row=0, column=0, columnspan=2, sticky='ew', padx=5, pady=5) # Span columns used by cameras
+        controls_frame.grid(row=0, column=0, sticky='ew', padx=5, pady=(5,0)) # pady bottom 0 to be close to grid
 
         # Configure layout - Make the snapshot button align to the right
         controls_frame.columnconfigure(0, weight=1) # Empty space pushes button right
@@ -430,13 +479,48 @@ class SenxorApp(ttk.Frame):
         # Snapshot button
         snapshot_btn = ttk.Button(controls_frame, text="Save Snapshot", command=self._snapshot_all)
         snapshot_btn.grid(row=0, column=1, padx=5, pady=2, sticky='e') # Grid to the right
-        Tooltip(snapshot_btn, "Save thermal data (CSV) and image (PNG) for the primary camera.")
+        # Update tooltip
+        Tooltip(snapshot_btn, "Save thermal data (CSV) and image (PNG) for ALL connected cameras.")
 
     def _snapshot_all(self):
-        # Save snapshot for the first camera view as before.
-        # Consider adding options later to snapshot all or select which one.
-        if self.heatmap_views:
-            self.heatmap_views[0].save_snapshot()
+        """Saves snapshot data (CSV) and image (PNG) for all active cameras, including camera port in filenames."""
+        num_saved = 0
+        sample_name = self.sample_number_var.get().strip()
+        success_ports = []
+        failed_ports = []
+        failed_msgs = []
+
+        if not self.heatmap_views:
+            self.set_status("Snapshot Error: No active cameras found.")
+            return
+
+        for i, hv in enumerate(self.heatmap_views):
+            port_name = hv.camera.connected_port or f"Camera{i+1}"
+            try:
+                # Patch: temporarily override sample_number_var to include port for this snapshot
+                orig_sample = hv.sample_number_var.get()
+                hv.sample_number_var.set(f"{sample_name}_{port_name}" if sample_name else port_name)
+                hv.save_snapshot()
+                hv.sample_number_var.set(orig_sample)  # Restore original
+                num_saved += 1
+                success_ports.append(port_name)
+            except Exception as e:
+                failed_ports.append(port_name)
+                failed_msgs.append(f"{port_name}: {e}")
+                print(f"Snapshot Error ({port_name}): {e}")
+
+        if num_saved > 0 and not failed_ports:
+            self.set_status(f"Snapshots saved for all cameras: {', '.join(success_ports)}.")
+        elif num_saved > 0 and failed_ports:
+            self.set_status(f"Snapshots saved for: {', '.join(success_ports)}. Failed for: {', '.join(failed_ports)}.")
+        elif failed_ports:
+            self.set_status(f"Snapshot failed for: {', '.join(failed_ports)}.")
+        if failed_msgs:
+            import tkinter.messagebox as mb
+            mb.showerror("Snapshot Error", "\n".join(failed_msgs))
+        elif num_saved > 0:
+            import tkinter.messagebox as mb
+            mb.showinfo("Snapshot Success", f"Snapshots saved for: {', '.join(success_ports)}.")
 
     def _create_settings_panel(self, style):
         self.settings_panel = ttk.LabelFrame(self.scrollable_inner_frame, text="Display Settings", style='TLabelframe', padding=(10,10))
@@ -475,9 +559,13 @@ class SenxorApp(ttk.Frame):
         ttk.Label(self.settings_panel, textvariable=self.cold_smooth_len_var, style='Content.TLabel', width=3).grid(row=3, column=2, sticky='w', padx=(0, 5))
         Tooltip(cold_slider, "Number of frames to average for the cold spot marker position (1-30).")
 
-        # Close button for the panel (optional, could just use the toggle button)
-        # close_btn = ttk.Button(self.settings_panel, text='Hide Settings', command=self._toggle_settings_panel, style='TButton')
-        # close_btn.grid(row=4, column=0, columnspan=3, pady=(15,0))
+        # Hot/Cold Spot Overlay Checkboxes
+        hot_chk = ttk.Checkbutton(self.settings_panel, text='Show Hot Spot Overlay', variable=self.show_hot_spot_var, style='TCheckbutton')
+        hot_chk.grid(row=4, column=0, columnspan=2, sticky='w', padx=5, pady=(10,2))
+        Tooltip(hot_chk, "Toggle the display of the hot spot marker on the heatmap.")
+        cold_chk = ttk.Checkbutton(self.settings_panel, text='Show Cold Spot Overlay', variable=self.show_cold_spot_var, style='TCheckbutton')
+        cold_chk.grid(row=5, column=0, columnspan=2, sticky='w', padx=5, pady=(2,10))
+        Tooltip(cold_chk, "Toggle the display of the cold spot marker on the heatmap.")
 
     def _toggle_settings_panel(self):
         self.settings_panel_visible = not self.settings_panel_visible
