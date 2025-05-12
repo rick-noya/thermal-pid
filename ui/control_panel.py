@@ -37,7 +37,7 @@ class ControlPanel(ttk.LabelFrame):
         self.setpoint_spin.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
         Tooltip(self.setpoint_spin, "Target temperature for PID control.")
 
-        # Row 0.5: Test Strategy
+        # Row 1: Test Strategy
         ttk.Label(pid_params_frame, text="Test Strategy:", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
         self.test_strategy_var = tk.StringVar(value='Temperature Set Point')
         self.TEST_STRATEGIES = ['Temperature Set Point', 'Voltage Step-Up to Set Point']
@@ -45,6 +45,29 @@ class ControlPanel(ttk.LabelFrame):
         self.test_strategy_combo.grid(row=1, column=1, sticky='ew', padx=5, pady=5)
         Tooltip(self.test_strategy_combo, "Select the test strategy for PID control.")
         self.test_strategy_combo.bind('<<ComboboxSelected>>', self._on_test_strategy_change)
+
+        # Row 2: PID Gains (Kp, Ki, Kd)
+        gains_frame = ttk.Frame(pid_params_frame, style='Content.TFrame')
+        gains_frame.grid(row=2, column=0, columnspan=2, sticky='ew', pady=5) # Span 2 columns
+
+        ttk.Label(gains_frame, text="Kp:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=2)
+        self.kp_var = tk.DoubleVar(value=pid.Kp)
+        self.kp_spin = ttk.Spinbox(gains_frame, from_=0, to=100, increment=0.01, textvariable=self.kp_var, width=7)
+        self.kp_spin.grid(row=0, column=1, sticky='ew', padx=5, pady=2)
+        Tooltip(self.kp_spin, "Proportional gain for PID controller.")
+
+        ttk.Label(gains_frame, text="Ki:", style='Content.TLabel').grid(row=0, column=2, sticky='w', padx=5, pady=2)
+        self.ki_var = tk.DoubleVar(value=pid.Ki)
+        self.ki_spin = ttk.Spinbox(gains_frame, from_=0, to=100, increment=0.01, textvariable=self.ki_var, width=7)
+        self.ki_spin.grid(row=0, column=3, sticky='ew', padx=5, pady=2)
+        Tooltip(self.ki_spin, "Integral gain for PID controller.")
+
+        ttk.Label(gains_frame, text="Kd:", style='Content.TLabel').grid(row=0, column=4, sticky='w', padx=5, pady=2)
+        self.kd_var = tk.DoubleVar(value=pid.Kd)
+        self.kd_spin = ttk.Spinbox(gains_frame, from_=0, to=100, increment=0.01, textvariable=self.kd_var, width=7)
+        self.kd_spin.grid(row=0, column=5, sticky='ew', padx=5, pady=2)
+        Tooltip(self.kd_spin, "Derivative gain for PID controller.")
+        for i in range(6): gains_frame.columnconfigure(i, weight=1, uniform="gains") # Distribute space in gains frame
 
         # --- Voltage Step-Up Parameters (hidden unless needed) ---
         self.vsu_params_frame = ttk.Frame(pid_params_frame, style='Content.TFrame')
@@ -73,36 +96,13 @@ class ControlPanel(ttk.LabelFrame):
         self.vsu_stab_thresh_spin.grid(row=3, column=1, sticky='ew', padx=5, pady=2)
         Tooltip(self.vsu_stab_thresh_spin, "Max allowed temperature fluctuation (°C) to consider stable.")
 
-        # Place the frame but hide by default
-        self.vsu_params_frame.grid(row=2, column=0, columnspan=2, sticky='ew', padx=5, pady=(0,5))
+        # Place the frame but hide by default (now row 3)
+        self.vsu_params_frame.grid(row=3, column=0, columnspan=2, sticky='ew', padx=5, pady=(0,5))
         self.vsu_params_frame.grid_remove()
 
-        # Row 1: PID Gains (Kp, Ki, Kd)
-        gains_frame = ttk.Frame(pid_params_frame, style='Content.TFrame')
-        gains_frame.grid(row=2, column=0, columnspan=2, sticky='ew', pady=5) # Span 2 columns
-
-        ttk.Label(gains_frame, text="Kp:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=2)
-        self.kp_var = tk.DoubleVar(value=pid.Kp)
-        self.kp_spin = ttk.Spinbox(gains_frame, from_=0, to=100, increment=0.01, textvariable=self.kp_var, width=7)
-        self.kp_spin.grid(row=0, column=1, sticky='ew', padx=5, pady=2)
-        Tooltip(self.kp_spin, "Proportional gain for PID controller.")
-
-        ttk.Label(gains_frame, text="Ki:", style='Content.TLabel').grid(row=0, column=2, sticky='w', padx=5, pady=2)
-        self.ki_var = tk.DoubleVar(value=pid.Ki)
-        self.ki_spin = ttk.Spinbox(gains_frame, from_=0, to=100, increment=0.01, textvariable=self.ki_var, width=7)
-        self.ki_spin.grid(row=0, column=3, sticky='ew', padx=5, pady=2)
-        Tooltip(self.ki_spin, "Integral gain for PID controller.")
-
-        ttk.Label(gains_frame, text="Kd:", style='Content.TLabel').grid(row=0, column=4, sticky='w', padx=5, pady=2)
-        self.kd_var = tk.DoubleVar(value=pid.Kd)
-        self.kd_spin = ttk.Spinbox(gains_frame, from_=0, to=100, increment=0.01, textvariable=self.kd_var, width=7)
-        self.kd_spin.grid(row=0, column=5, sticky='ew', padx=5, pady=2)
-        Tooltip(self.kd_spin, "Derivative gain for PID controller.")
-        for i in range(6): gains_frame.columnconfigure(i, weight=1, uniform="gains") # Distribute space in gains frame
-
-        # Row 2: Update PID Button (directly in params frame)
+        # Row 4: Update PID Button (directly in params frame)
         self.update_pid_btn = ttk.Button(pid_params_frame, text="Update PID Params", command=self.update_pid)
-        self.update_pid_btn.grid(row=3, column=0, columnspan=2, padx=5, pady=(10,5), sticky='ew') # Span 2 columns
+        self.update_pid_btn.grid(row=4, column=0, columnspan=2, padx=5, pady=(10,5), sticky='ew') # Span 2 columns
         Tooltip(self.update_pid_btn, "Apply the current PID parameters (Setpoint, Kp, Ki, Kd).")
 
         # --- PID Input Source & Control Section ---
