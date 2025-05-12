@@ -212,7 +212,7 @@ class TrendGraph(ttk.Frame):
         self.update_graph() # Redraw empty graph, which will now set axes based on current time
         self.set_status("Trend graph data cleared.")
 
-    def export_csv(self, sample_name: str | None = None):
+    def export_csv(self, sample_name: str | None = None, output_path: str | None = None):
         if not self.time_data:
             self.set_status("No data to export.")
             return
@@ -225,15 +225,21 @@ class TrendGraph(ttk.Frame):
         else:
             filename = f"trend_{timestamp}.csv"
 
+        # If output_path is provided, use it; otherwise, use filename in cwd
+        if output_path:
+            csv_path = output_path
+        else:
+            csv_path = filename
+
         try:
-            with open(filename, 'w', newline='') as f:
+            with open(csv_path, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(['Timestamp (PST)', 'Max Temp (C)', 'Min Temp (C)', 'Avg Temp (C)', 'Voltage (V)']) # Updated header
                 for dt_obj, mx, mn, av, v in zip(self.time_data, self.max_data, self.min_data, self.avg_data, self.voltage_data):
                     # Format datetime object to string including PST
                     timestamp_str = dt_obj.strftime('%Y-%m-%d %H:%M:%S %Z')
                     writer.writerow([timestamp_str, mx, mn, av, v]) # Write formatted timestamp
-            self.set_status(f"Graph data exported to {filename}")
+            self.set_status(f"Graph data exported to {csv_path}")
         except Exception as e:
             self.set_status(f"Export failed: {e}")
 

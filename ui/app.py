@@ -484,8 +484,12 @@ class SenxorApp(ttk.Frame):
         # Snapshot button
         snapshot_btn = ttk.Button(controls_frame, text="Save Snapshot", command=self._snapshot_all)
         snapshot_btn.grid(row=0, column=1, padx=5, pady=2, sticky='e') # Grid to the right
-        # Update tooltip
         Tooltip(snapshot_btn, "Save thermal data (CSV) and image (PNG) for ALL connected cameras.")
+
+        # Save All Data button
+        save_all_btn = ttk.Button(controls_frame, text="Save All Data", command=self._save_all_data, style='Primary.TButton')
+        save_all_btn.grid(row=0, column=2, padx=5, pady=2, sticky='e')
+        Tooltip(save_all_btn, "Save trend graph data and all camera data to a dated folder.")
 
     def _snapshot_all(self):
         """Saves snapshot data (CSV) and image (PNG) for all active cameras, including camera port in filenames."""
@@ -526,6 +530,53 @@ class SenxorApp(ttk.Frame):
         elif num_saved > 0:
             import tkinter.messagebox as mb
             mb.showinfo("Snapshot Success", f"Snapshots saved for: {', '.join(success_ports)}.")
+
+    def _save_all_data(self):
+        import os
+        import time
+        from tkinter import messagebox
+        # Create a folder with the current date and time
+        timestamp = time.strftime('%Y%m%d-%H%M%S')
+        folder_name = f"capture_{timestamp}"
+        os.makedirs(folder_name, exist_ok=True)
+
+        # Save trend graph data
+        try:
+            sample_name = self.sample_number_var.get().strip()
+            trend_graph_path = os.path.join(folder_name, "trend_graph.csv")
+            self.trend_graph.export_csv(sample_name=sample_name, output_path=trend_graph_path)
+        except Exception as e:
+            messagebox.showerror("Save All Data", f"Failed to save trend graph data: {e}")
+            return
+
+        # Save all camera snapshots
+        num_saved = 0
+        failed_ports = []
+        failed_msgs = []
+        if not self.heatmap_views:
+            messagebox.showerror("Save All Data", "No active cameras found.")
+            return
+        for i, hv in enumerate(self.heatmap_views):
+            port_name = hv.camera.connected_port or f"Camera{i+1}"
+            try:
+                orig_sample = hv.sample_number_var.get()
+                hv.sample_number_var.set(f"{sample_name}_{port_name}" if sample_name else port_name)
+                # Patch: temporarily change working directory to folder_name
+                orig_cwd = os.getcwd()
+                os.chdir(folder_name)
+                hv.save_snapshot()
+                os.chdir(orig_cwd)
+                hv.sample_number_var.set(orig_sample)
+                num_saved += 1
+            except Exception as e:
+                failed_ports.append(port_name)
+                failed_msgs.append(f"{port_name}: {e}")
+        if num_saved > 0 and not failed_ports:
+            messagebox.showinfo("Save All Data", f"Trend graph and all camera snapshots saved in '{folder_name}'.")
+        elif num_saved > 0 and failed_ports:
+            messagebox.showwarning("Save All Data", f"Trend graph and some camera snapshots saved in '{folder_name}'. Failed for: {', '.join(failed_ports)}.\n{chr(10).join(failed_msgs)}")
+        elif failed_ports:
+            messagebox.showerror("Save All Data", f"Failed to save camera snapshots: {', '.join(failed_ports)}.\n{chr(10).join(failed_msgs)}")
 
     def _create_settings_panel(self, style):
         self.settings_panel = ttk.LabelFrame(self.scrollable_inner_frame, text="Display Settings", style='TLabelframe', padding=(10,10))
