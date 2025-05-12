@@ -159,7 +159,11 @@ class ControlPanel(ttk.LabelFrame):
         # Settings part (initially disabled)
         self.sg_settings_frame = ttk.Frame(sg_frame, style='Content.TFrame')
         self.sg_settings_frame.grid(row=1, column=0, columnspan=6, sticky='ew', pady=5)
-        self.sg_settings_frame.columnconfigure(tuple(range(8)), weight=1, uniform="sg_settings")
+        # Adjust columnspan for Freq and Volt rows if buttons are removed
+        # Original columnspan was 8 for sg_settings_frame internal grid.
+        # Freq related: Label, Spin, Set Freq btn (3 columns)
+        # Volt related: Label, Spin, Set Volt btn (3 columns)
+        self.sg_settings_frame.columnconfigure(tuple(range(3)), weight=1, uniform="sg_settings_reduced")
 
         ttk.Label(self.sg_settings_frame, text="Frequency (Hz):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
         self.sg_freq_var = tk.DoubleVar(value=100000.0)
@@ -170,13 +174,6 @@ class ControlPanel(ttk.LabelFrame):
         self.set_freq_btn.grid(row=0, column=2, padx=5, pady=5, sticky='ew')
         Tooltip(self.set_freq_btn, "Apply the frequency to the signal generator.")
 
-        self.minus_freq_btn = ttk.Button(self.sg_settings_frame, text="-", command=self.decrease_freq, width=3)
-        self.minus_freq_btn.grid(row=0, column=3, padx=2, pady=5, sticky='ew')
-        Tooltip(self.minus_freq_btn, "Decrease frequency.")
-        self.plus_freq_btn = ttk.Button(self.sg_settings_frame, text="+", command=self.increase_freq, width=3)
-        self.plus_freq_btn.grid(row=0, column=4, padx=2, pady=5, sticky='ew')
-        Tooltip(self.plus_freq_btn, "Increase frequency.")
-
         ttk.Label(self.sg_settings_frame, text="Voltage (V):", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
         self.sg_voltage_var = tk.DoubleVar(value=1.0)
         self.volt_spin = ttk.Spinbox(self.sg_settings_frame, from_=0, to=10, increment=0.01, textvariable=self.sg_voltage_var, width=8)
@@ -185,13 +182,6 @@ class ControlPanel(ttk.LabelFrame):
         self.set_volt_btn = ttk.Button(self.sg_settings_frame, text="Set Volt", command=self.set_voltage)
         self.set_volt_btn.grid(row=1, column=2, padx=5, pady=5, sticky='ew')
         Tooltip(self.set_volt_btn, "Apply the voltage to the signal generator.")
-
-        self.output_on_btn = ttk.Button(self.sg_settings_frame, text="Output ON", command=self.output_on, style='Primary.TButton')
-        self.output_on_btn.grid(row=1, column=3, columnspan=1, padx=5, pady=5, sticky='ew') # columnspan reduced for balance
-        Tooltip(self.output_on_btn, "Enable the signal generator output.")
-        self.output_off_btn = ttk.Button(self.sg_settings_frame, text="Output OFF", command=self.output_off)
-        self.output_off_btn.grid(row=1, column=4, columnspan=1, padx=5, pady=5, sticky='ew')
-        Tooltip(self.output_off_btn, "Disable the signal generator output.")
 
         # Raw command part (initially disabled)
         self.sg_raw_cmd_frame = ttk.Frame(sg_frame, style='Content.TFrame')
@@ -214,8 +204,8 @@ class ControlPanel(ttk.LabelFrame):
 
         # Group all SG controls that should be disabled/enabled together
         self.sg_interactive_widgets = [
-            self.freq_spin, self.set_freq_btn, self.minus_freq_btn, self.plus_freq_btn,
-            self.volt_spin, self.set_volt_btn, self.output_on_btn, self.output_off_btn,
+            self.freq_spin, self.set_freq_btn,
+            self.volt_spin, self.set_volt_btn,
             self.cmd_entry, self.send_cmd_btn
         ]
         self._toggle_sg_controls_enabled(False) # Initially disabled
@@ -328,8 +318,7 @@ class ControlPanel(ttk.LabelFrame):
         try:
             if self.siggen.is_open:
                 self.siggen.set_voltage(0.0) # Ensure voltage is set to 0 on stop
-                self.siggen.output_off()      # Ensure output is off
-                self.set_status("PID stopped. SigGen output set to 0V and OFF.")
+                self.set_status("PID stopped. SigGen output set to 0V.")
         except Exception as e:
             self.set_status(f"PID stopped. SigGen error: {e}")
 
@@ -353,26 +342,6 @@ class ControlPanel(ttk.LabelFrame):
             self.set_status(error_msg)
             self.set_sg_status(error_msg)
 
-    def increase_freq(self):
-        if not self._check_serial_open(): return
-        try:
-            current_val = self.sg_freq_var.get()
-            freq = int(current_val) + int(self.freq_spin.cget('increment')) # use configured increment
-            self.sg_freq_var.set(freq)
-            self.set_frequency()
-        except Exception as e:
-            self.set_status(f"Freq error: {e}")
-
-    def decrease_freq(self):
-        if not self._check_serial_open(): return
-        try:
-            current_val = self.sg_freq_var.get()
-            freq = max(0, int(current_val) - int(self.freq_spin.cget('increment')))
-            self.sg_freq_var.set(freq)
-            self.set_frequency()
-        except Exception as e:
-            self.set_status(f"Freq error: {e}")
-
     def set_voltage(self):
         if not self._check_serial_open(): return
         try:
@@ -383,34 +352,6 @@ class ControlPanel(ttk.LabelFrame):
             # self.set_status(status_msg)
         except Exception as e:
             error_msg = f"Volt error: {e}"
-            self.set_status(error_msg)
-            self.set_sg_status(error_msg)
-
-    def output_on(self):
-        if not self._check_serial_open(): return
-        try:
-            self.siggen.output_on()
-            status_msg = "Signal Generator Output ON"
-            self.set_sg_status(status_msg)
-            self.set_status(status_msg) # Also to main status as it's an important state change
-            self.output_on_btn.configure(state='disabled')
-            self.output_off_btn.configure(state='normal')
-        except Exception as e:
-            error_msg = f"ON error: {e}"
-            self.set_status(error_msg)
-            self.set_sg_status(error_msg)
-
-    def output_off(self):
-        if not self._check_serial_open(): return
-        try:
-            self.siggen.output_off()
-            status_msg = "Signal Generator Output OFF"
-            self.set_sg_status(status_msg)
-            self.set_status(status_msg) # Also to main status
-            self.output_on_btn.configure(state='normal')
-            self.output_off_btn.configure(state='disabled')
-        except Exception as e:
-            error_msg = f"OFF error: {e}"
             self.set_status(error_msg)
             self.set_sg_status(error_msg)
 
