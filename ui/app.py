@@ -113,6 +113,8 @@ class SenxorApp(ttk.Frame):
         self.colormap_var = tk.StringVar(value='Viridis')
         self.show_hot_spot_var = tk.BooleanVar(value=True)
         self.show_cold_spot_var = tk.BooleanVar(value=True)
+        # Global Max Voltage
+        self.max_voltage_var = tk.DoubleVar(value=5.0)
 
         # Trace smoothing changes to update heatmap views
         def _propagate_smoothing(*args):
@@ -183,7 +185,8 @@ class SenxorApp(ttk.Frame):
                                           camera_manager=self.camera_manager, 
                                           data_aggregator=self.data_aggregator,
                                           set_status=status_update_method, 
-                                          style='Content.TFrame')
+                                          style='Content.TFrame',
+                                          max_voltage_var=self.max_voltage_var)
         
         # Camera Display Area Frame
         self.camera_frame = ttk.Frame(self.top_paned, style='Content.TFrame')
@@ -577,6 +580,12 @@ class SenxorApp(ttk.Frame):
         cold_chk = ttk.Checkbutton(self.settings_panel, text='Show Cold Spot Overlay', variable=self.show_cold_spot_var, style='TCheckbutton')
         cold_chk.grid(row=5, column=0, columnspan=2, sticky='w', padx=5, pady=(2,10))
         Tooltip(cold_chk, "Toggle the display of the cold spot marker on the heatmap.")
+
+        # Max Voltage (global)
+        ttk.Label(self.settings_panel, text='Max Voltage (V):', style='Content.TLabel').grid(row=6, column=0, sticky='w', padx=5, pady=5)
+        max_voltage_spin = ttk.Spinbox(self.settings_panel, from_=0, to=20, increment=0.1, textvariable=self.max_voltage_var, width=8)
+        max_voltage_spin.grid(row=6, column=1, sticky='ew', padx=5, pady=5)
+        Tooltip(max_voltage_spin, "Global maximum voltage allowed for all operations (default 5V).")
 
     def _toggle_settings_panel(self):
         self.settings_panel_visible = not self.settings_panel_visible

@@ -12,7 +12,7 @@ from devices.camera_manager import CameraManager
 from devices.data_aggregator import DataAggregator
 
 class ControlPanel(ttk.LabelFrame):
-    def __init__(self, master, pid, siggen, camera_manager: CameraManager, data_aggregator: DataAggregator, set_status=None, style='TLabelframe', **kwargs):
+    def __init__(self, master, pid, siggen, camera_manager: CameraManager, data_aggregator: DataAggregator, set_status=None, style='TLabelframe', max_voltage_var=None, **kwargs):
         super().__init__(master, text="PID & Signal Generator Control", style=style, **kwargs)
         self.pid = pid
         self.siggen = siggen
@@ -20,6 +20,7 @@ class ControlPanel(ttk.LabelFrame):
         self.data_aggregator = data_aggregator
         self.set_status = set_status or (lambda msg: None) # Main app status
         self.columnconfigure(0, weight=1) # Make the main frame responsive
+        self.max_voltage_var = max_voltage_var
 
         # Store available cameras for mapping display names to indices
         self._available_cameras_map = {}
@@ -36,9 +37,49 @@ class ControlPanel(ttk.LabelFrame):
         self.setpoint_spin.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
         Tooltip(self.setpoint_spin, "Target temperature for PID control.")
 
+        # Row 0.5: Test Strategy
+        ttk.Label(pid_params_frame, text="Test Strategy:", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        self.test_strategy_var = tk.StringVar(value='Temperature Set Point')
+        self.TEST_STRATEGIES = ['Temperature Set Point', 'Voltage Step-Up to Set Point']
+        self.test_strategy_combo = ttk.Combobox(pid_params_frame, textvariable=self.test_strategy_var, values=self.TEST_STRATEGIES, state='readonly', width=25)
+        self.test_strategy_combo.grid(row=1, column=1, sticky='ew', padx=5, pady=5)
+        Tooltip(self.test_strategy_combo, "Select the test strategy for PID control.")
+        self.test_strategy_combo.bind('<<ComboboxSelected>>', self._on_test_strategy_change)
+
+        # --- Voltage Step-Up Parameters (hidden unless needed) ---
+        self.vsu_params_frame = ttk.Frame(pid_params_frame, style='Content.TFrame')
+        # Initial Voltage
+        ttk.Label(self.vsu_params_frame, text="Initial Voltage (V):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=2)
+        self.vsu_initial_voltage_var = tk.DoubleVar(value=1.0)
+        self.vsu_initial_voltage_spin = ttk.Spinbox(self.vsu_params_frame, from_=0, to=10, increment=0.1, textvariable=self.vsu_initial_voltage_var, width=7)
+        self.vsu_initial_voltage_spin.grid(row=0, column=1, sticky='ew', padx=5, pady=2)
+        Tooltip(self.vsu_initial_voltage_spin, "Starting voltage for the step-up test.")
+        # Step Size
+        ttk.Label(self.vsu_params_frame, text="Step Size (V):", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=2)
+        self.vsu_step_size_var = tk.DoubleVar(value=1.0)
+        self.vsu_step_size_spin = ttk.Spinbox(self.vsu_params_frame, from_=0.1, to=5, increment=0.1, textvariable=self.vsu_step_size_var, width=7)
+        self.vsu_step_size_spin.grid(row=1, column=1, sticky='ew', padx=5, pady=2)
+        Tooltip(self.vsu_step_size_spin, "Voltage increment for each step.")
+        # Stabilization Window
+        ttk.Label(self.vsu_params_frame, text="Stabilization Window (s):", style='Content.TLabel').grid(row=2, column=0, sticky='w', padx=5, pady=2)
+        self.vsu_stab_window_var = tk.DoubleVar(value=2.0)
+        self.vsu_stab_window_spin = ttk.Spinbox(self.vsu_params_frame, from_=1, to=60, increment=0.5, textvariable=self.vsu_stab_window_var, width=7)
+        self.vsu_stab_window_spin.grid(row=2, column=1, sticky='ew', padx=5, pady=2)
+        Tooltip(self.vsu_stab_window_spin, "How many seconds of stable temperature are required before stepping up.")
+        # Stabilization Threshold
+        ttk.Label(self.vsu_params_frame, text="Stabilization Threshold (°C):", style='Content.TLabel').grid(row=3, column=0, sticky='w', padx=5, pady=2)
+        self.vsu_stab_thresh_var = tk.DoubleVar(value=0.2)
+        self.vsu_stab_thresh_spin = ttk.Spinbox(self.vsu_params_frame, from_=0.01, to=2, increment=0.01, textvariable=self.vsu_stab_thresh_var, width=7)
+        self.vsu_stab_thresh_spin.grid(row=3, column=1, sticky='ew', padx=5, pady=2)
+        Tooltip(self.vsu_stab_thresh_spin, "Max allowed temperature fluctuation (°C) to consider stable.")
+
+        # Place the frame but hide by default
+        self.vsu_params_frame.grid(row=2, column=0, columnspan=2, sticky='ew', padx=5, pady=(0,5))
+        self.vsu_params_frame.grid_remove()
+
         # Row 1: PID Gains (Kp, Ki, Kd)
         gains_frame = ttk.Frame(pid_params_frame, style='Content.TFrame')
-        gains_frame.grid(row=1, column=0, columnspan=2, sticky='ew', pady=5) # Span 2 columns
+        gains_frame.grid(row=2, column=0, columnspan=2, sticky='ew', pady=5) # Span 2 columns
 
         ttk.Label(gains_frame, text="Kp:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=2)
         self.kp_var = tk.DoubleVar(value=pid.Kp)
@@ -61,7 +102,7 @@ class ControlPanel(ttk.LabelFrame):
 
         # Row 2: Update PID Button (directly in params frame)
         self.update_pid_btn = ttk.Button(pid_params_frame, text="Update PID Params", command=self.update_pid)
-        self.update_pid_btn.grid(row=2, column=0, columnspan=2, padx=5, pady=(10,5), sticky='ew') # Span 2 columns
+        self.update_pid_btn.grid(row=3, column=0, columnspan=2, padx=5, pady=(10,5), sticky='ew') # Span 2 columns
         Tooltip(self.update_pid_btn, "Apply the current PID parameters (Setpoint, Kp, Ki, Kd).")
 
         # --- PID Input Source & Control Section ---
@@ -315,12 +356,19 @@ class ControlPanel(ttk.LabelFrame):
             self.set_status("PID is disabled. Cannot start.")
             return
         self.update_pid() # Ensure latest params are set before starting
-        self.pid.resume()
-        self.set_status("PID control started.")
-        # Potentially disable start, enable stop, etc.
-        self.start_pid_btn.configure(state='disabled')
-        self.stop_pid_btn.configure(state='normal')
-        self.enable_pid_chk.configure(state='disabled') # Disable checkbox while running
+        strategy = self.test_strategy_var.get()
+        if strategy == 'Temperature Set Point':
+            self.pid.resume()
+            self.set_status("PID control started (Temperature Set Point mode).")
+            self.start_pid_btn.configure(state='disabled')
+            self.stop_pid_btn.configure(state='normal')
+            self.enable_pid_chk.configure(state='disabled')
+        elif strategy == 'Voltage Step-Up to Set Point':
+            self.set_status("Starting Voltage Step-Up to Set Point strategy...")
+            self.start_pid_btn.configure(state='disabled')
+            self.stop_pid_btn.configure(state='normal')
+            self.enable_pid_chk.configure(state='disabled')
+            self.start_voltage_stepup_strategy()
 
     def stop_all(self):
         self.pid.pause()
@@ -329,6 +377,9 @@ class ControlPanel(ttk.LabelFrame):
         self.start_pid_btn.configure(state='normal')
         self.stop_pid_btn.configure(state='disabled')
         self.enable_pid_chk.configure(state='normal') # Re-enable checkbox
+        # Stop voltage step-up strategy if running
+        if hasattr(self, '_vsu_running'):
+            self._vsu_running = False
         try:
             if self.siggen.is_open:
                 self.siggen.set_voltage(0.0) # Ensure voltage is set to 0 on stop
@@ -360,8 +411,12 @@ class ControlPanel(ttk.LabelFrame):
         if not self._check_serial_open(): return
         try:
             voltage = float(self.sg_voltage_var.get())
+            max_v = self.max_voltage_var.get() if self.max_voltage_var else 5.0
+            if voltage > max_v:
+                voltage = max_v
+                self.sg_voltage_var.set(max_v)
             self.siggen.set_voltage(voltage)
-            status_msg = f"Voltage set to {voltage:.2f} V"
+            status_msg = f"Voltage set to {voltage:.2f} V (max {max_v} V)"
             self.set_sg_status(status_msg)
             # self.set_status(status_msg)
         except Exception as e:
@@ -471,3 +526,66 @@ class ControlPanel(ttk.LabelFrame):
             error_msg = f"Error setting PID source: {e}"
             self.set_status(error_msg)
             print(error_msg) # Also print for debugging
+
+    def start_voltage_stepup_strategy(self):
+        self._vsu_target_temp = self.setpoint_var.get()
+        self._vsu_agg_mode = self.pid_agg_mode_var.get() if hasattr(self, 'pid_agg_mode_var') else 'average_mean'
+        self._vsu_voltage = self.vsu_initial_voltage_var.get()
+        self._vsu_step_size = self.vsu_step_size_var.get()
+        self._vsu_max_voltage = self._vsu_max_voltage
+        self._vsu_temp_buffer = []
+        # Calculate buffer size from stabilization window and interval
+        self._vsu_interval_ms = 100  # ms
+        stab_window_s = self.vsu_stab_window_var.get()
+        self._vsu_buffer_size = max(2, int(stab_window_s * 1000 // self._vsu_interval_ms))
+        self._vsu_stable_threshold = self.vsu_stab_thresh_var.get()
+        self._vsu_running = True
+        self.siggen.set_voltage(self._vsu_voltage)
+        self.set_status(f"Voltage Step-Up: Set voltage to {self._vsu_voltage:.2f}V, waiting for stabilization...")
+        self._vsu_step_loop()
+
+    def _vsu_step_loop(self):
+        if not self._vsu_running:
+            return
+        # Get current temperature (using aggregator)
+        temp = None
+        if self.data_aggregator:
+            temp = self.data_aggregator.get_frames_for_pid(aggregation_mode=self._vsu_agg_mode)
+        if temp is not None:
+            self._vsu_temp_buffer.append(temp)
+            if len(self._vsu_temp_buffer) > self._vsu_buffer_size:
+                self._vsu_temp_buffer.pop(0)
+        # Check stabilization
+        stabilized = False
+        if len(self._vsu_temp_buffer) == self._vsu_buffer_size:
+            tmax = max(self._vsu_temp_buffer)
+            tmin = min(self._vsu_temp_buffer)
+            if abs(tmax - tmin) < self._vsu_stable_threshold:
+                stabilized = True
+        # Check if setpoint reached
+        if temp is not None and temp >= self._vsu_target_temp:
+            self.set_status(f"Setpoint reached ({temp:.2f}°C). Switching to PID control.")
+            self._vsu_running = False
+            self.pid.resume()
+            return
+        # If stabilized but not at setpoint, step up voltage
+        if stabilized:
+            if self._vsu_voltage < self._vsu_max_voltage:
+                self._vsu_voltage += self._vsu_step_size
+                if self._vsu_voltage > self._vsu_max_voltage:
+                    self._vsu_voltage = self._vsu_max_voltage
+                self.siggen.set_voltage(self._vsu_voltage)
+                self.set_status(f"Stabilized at {temp:.2f}°C. Increasing voltage to {self._vsu_voltage:.2f}V (max {self._vsu_max_voltage}V)...")
+                self._vsu_temp_buffer.clear()
+            else:
+                self.set_status(f"Max voltage reached ({self._vsu_max_voltage}V) but setpoint not achieved.")
+                self._vsu_running = False
+                return
+        # Schedule next check
+        self.after(self._vsu_interval_ms, self._vsu_step_loop)
+
+    def _on_test_strategy_change(self, event=None):
+        if self.test_strategy_var.get() == 'Voltage Step-Up to Set Point':
+            self.vsu_params_frame.grid()
+        else:
+            self.vsu_params_frame.grid_remove()
