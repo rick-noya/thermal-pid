@@ -25,6 +25,7 @@ sys.path.insert(0, parent_dir)
 from devices.camera_manager import CameraManager
 from devices.data_aggregator import DataAggregator # Added for type hinting if needed, SenxorApp already gets pid which has it
 import time # Added for PID output update timestamp
+import math
 
 
 class SenxorApp(ttk.Frame):
@@ -123,17 +124,13 @@ class SenxorApp(ttk.Frame):
                                           set_status=status_update_method, 
                                           style='Content.TFrame')
         
-        # --- Camera Display Area using ttk.Notebook ---
-        self.camera_notebook = ttk.Notebook(self.top_paned, style='Content.TNotebook')
-        # Add custom style for notebook if needed, e.g., tab colors
-        style.configure('Content.TNotebook', background=COLOR_FRAME_BG)
-        style.configure('Content.TNotebook.Tab', background=COLOR_FRAME_BG, padding=[5, 2])
-        style.map('Content.TNotebook.Tab', 
-                  background=[('selected', COLOR_BACKGROUND), ('active', COLOR_FRAME_BG)],
-                  foreground=[('selected', COLOR_PRIMARY_ACCENT)])
+        # --- Camera Display Area (single pane, no tabs) ---
+        self.camera_frame = ttk.Frame(self.top_paned, style='Content.TFrame')
 
-        self.heatmap_views = [] # Store references to all heatmap views
-        self._populate_camera_tabs()
+        # Store references to all heatmap views for later access
+        self.heatmap_views = []
+        # Populate after the layout is in place to ensure accurate dimensions
+        self.after(0, self._populate_camera_views)
 
         self.trend_graph = TrendGraph(main_content_frame, set_status=status_update_method, style='Content.TFrame')
         
@@ -149,8 +146,8 @@ class SenxorApp(ttk.Frame):
             # It could still be used for loading data or other purposes.
             pass 
 
-        self.top_paned.add(self.control_panel, weight=1) # Control panel gets 1 part
-        self.top_paned.add(self.camera_notebook, weight=2) # Camera notebook gets 2 parts
+        self.top_paned.add(self.control_panel, weight=1)  # Control panel gets 1 part
+        self.top_paned.add(self.camera_frame,   weight=2)  # Camera area gets 2 parts
 
         self.trend_graph.grid(row=2, column=0, sticky='nsew')
 
@@ -174,31 +171,89 @@ class SenxorApp(ttk.Frame):
 
         self.last_pid_output_time = 0 # To avoid updating siggen too frequently if sample_time is very small
 
-    def _populate_camera_tabs(self):
-        # Remove all tabs
-        for tab in self.camera_notebook.tabs():
-            self.camera_notebook.forget(tab)
+    def _populate_camera_views(self):
+        """Populate/refresh the camera display area with a stacked list of HeatmapViews.
+        Each camera is shown in its own sub-frame with the COM-port label above the view."""
+
+        # Clear previous widgets
+        for child in self.camera_frame.winfo_children():
+            child.destroy()
+
         self.heatmap_views.clear()
+
         active_cameras = self.camera_manager.get_all_cameras()
+
         if not active_cameras:
-            no_cam_frame = ttk.Frame(self.camera_notebook, style='Content.TFrame')
-            msg_label = ttk.Label(no_cam_frame, text="No cameras available or started.", style='Content.TLabel', font=('Segoe UI', 12))
+            no_cam_frame = ttk.Frame(self.camera_frame, style='Content.TFrame')
+            msg_label = ttk.Label(
+                no_cam_frame,
+                text="No cameras available or started.",
+                style='Content.TLabel',
+                font=('Segoe UI', 12)
+            )
             msg_label.pack(padx=20, pady=20, expand=True, anchor='center')
-            self.camera_notebook.add(no_cam_frame, text="No Cameras")
-        else:
-            for i, cam_instance in enumerate(active_cameras):
-                tab_frame = ttk.Frame(self.camera_notebook, style='Content.TFrame')
-                heatmap_view_instance = HeatmapView(
-                    tab_frame,
-                    camera=cam_instance,
-                    trend_graph=None,
-                    set_status=self.status_bar_view.set_status,
-                    style='Content.TFrame'
-                )
-                heatmap_view_instance.pack(fill='both', expand=True)
-                self.heatmap_views.append(heatmap_view_instance)
-                tab_title = f"Camera {cam_instance.connected_port or f'ID-{i}'}"
-                self.camera_notebook.add(tab_frame, text=tab_title)
+            no_cam_frame.pack(fill='both', expand=True)
+            return
+
+        # Determine tiling dimensions (max 2 columns)
+        cols = min(2, len(active_cameras))
+        rows = math.ceil(len(active_cameras) / cols)
+
+        # Ensure grid columns stretch evenly
+        for c in range(cols):
+            self.camera_frame.columnconfigure(c, weight=1)
+        for r in range(rows):
+            self.camera_frame.rowconfigure(r, weight=1)
+
+        # Compute tile size respecting aspect ratio (80x62) and max half-screen height
+        self.update_idletasks()  # Get accurate frame width
+        available_w = max(1, self.camera_frame.winfo_width())
+        padding_px = 10
+        tile_w = max(1, int((available_w - (cols + 1) * padding_px) / cols))
+        TILE_RATIO = 62 / 80  # height / width
+        tile_h = max(1, int(tile_w * TILE_RATIO))
+
+        screen_h = self.master.winfo_screenheight()
+        max_total_h = int(screen_h * 0.5)  # Half the screen height
+
+        # If tiles would exceed max height, shrink them proportionally
+        if tile_h * rows + (rows + 1) * padding_px > max_total_h:
+            tile_h = int((max_total_h - (rows + 1) * padding_px) / rows)
+            tile_w = max(1, int(tile_h / TILE_RATIO))
+
+        # Create a HeatmapView for each connected camera and position it on the grid
+        for i, cam_instance in enumerate(active_cameras):
+            r, c = divmod(i, cols)
+
+            camera_container = ttk.Frame(self.camera_frame, style='Content.TFrame', padding=(5, 5))
+            camera_container.grid(row=r, column=c, sticky='nsew', padx=padding_px, pady=padding_px)
+
+            # COM-port / identifier label
+            port_name = cam_instance.connected_port or f"ID-{i}"
+            title_lbl = ttk.Label(
+                camera_container,
+                text=port_name,
+                style='Content.TLabel',
+                font=('Segoe UI', 11, 'bold')
+            )
+            title_lbl.pack(anchor='w', pady=(0, 2))
+
+            # Heatmap view
+            heatmap_view_instance = HeatmapView(
+                camera_container,
+                camera=cam_instance,
+                trend_graph=None,
+                set_status=self.status_bar_view.set_status,
+                style='Content.TFrame'
+            )
+            heatmap_view_instance.pack(fill='both', expand=True)
+
+            # Enforce target size & aspect ratio
+            if hasattr(heatmap_view_instance, 'set_target_size'):
+                heatmap_view_instance.set_target_size(tile_w, tile_h)
+
+            # Keep reference
+            self.heatmap_views.append(heatmap_view_instance)
 
     def set_initial_pane_proportions(self):
         self.update_idletasks()
@@ -222,30 +277,19 @@ class SenxorApp(ttk.Frame):
         # If multiple heatmaps, which one provides the sample name?
         # For now, use the first one if available, or let user select later.
         if self.heatmap_views:
-            # Potentially get sample name from the currently selected tab's heatmap view
-            try:
-                selected_tab_index = self.camera_notebook.index(self.camera_notebook.select())
-                if 0 <= selected_tab_index < len(self.heatmap_views):
-                    sample_name = self.heatmap_views[selected_tab_index].get_sample_number()
-                else: # Fallback to first if selection is weird
-                    sample_name = self.heatmap_views[0].get_sample_number()
-            except tk.TclError: # If no tab is selected or notebook is empty
-                 if self.heatmap_views: # Fallback to first if any exist
-                    sample_name = self.heatmap_views[0].get_sample_number()
+            # Default to first heatmap view when multiple are present
+            sample_name = self.heatmap_views[0].get_sample_number()
         
         if hasattr(self, 'trend_graph') and self.trend_graph:
             self.trend_graph.export_csv(sample_name=sample_name) 
 
-    def refresh_camera_tabs(self):
-        # This method can be safely called from the hotplug thread using after()
-        self.after(0, self._populate_camera_tabs)
-        # Optionally, update trend graph linkage, etc.
-        # You may want to re-link trend graph to the first available camera
-        # or keep the previous selection if possible.
+    def refresh_camera_views(self):
+        """Trigger a refresh of the camera display. Safe to call from non-UI threads."""
+        self.after(0, self._populate_camera_views)
 
     def _on_camera_hotplug(self):
-        print("SenxorApp: Camera hotplug event detected. Refreshing camera tabs...")
-        self.refresh_camera_tabs() 
+        print("SenxorApp: Camera hotplug event detected. Refreshing camera views...")
+        self.refresh_camera_views() 
 
     def _update_pid_output(self):
         """Periodically calculates PID output and applies it to the signal generator."""

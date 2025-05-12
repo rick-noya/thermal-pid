@@ -25,11 +25,18 @@ class HeatmapView(ttk.Frame):
         self.trend_graph = trend_graph
         self.set_status = set_status or (lambda msg: None)
         
+        # Desired fixed display size (may be set by parent container)
+        self.target_size = (400, 310)  # Will be overwritten later if needed
+
+        # Aspect ratio constants (sensor native 80x62)
+        self.AR_W = 80
+        self.AR_H = 62
+        
         self.img_label = ttk.Label(self) # No specific style, will inherit from parent or default TFrame
         self.img_label.grid(row=0, column=0, padx=5, pady=5, sticky='nsew')
         self.last_frame = None
         # self.last_overlay = None # Not used
-        self.last_size = (400, 310) # Default, will be updated by configure
+        self.last_size = self.target_size
         self.after_id = None
         self.update_interval = 100  # ms (10 FPS)
         self.running = True
@@ -161,17 +168,34 @@ class HeatmapView(ttk.Frame):
         # self.set_status(f"Smoothing history set to: Hot {new_hot_len}, Cold {new_cold_len}")
 
     def on_img_label_resize(self, event):
-        w, h = event.width, event.height
-        if w < 10 or h < 10: # Reduced minimum size slightly
+        """Maintain 80x62 aspect ratio when the containing widget is resized."""
+        w_avail, h_avail = event.width, event.height
+
+        if w_avail < 10 or h_avail < 10:
             return
-        self.last_size = (w, h)
-        self._create_disconnected_placeholder() # Re-create placeholder on resize to fit new size
+
+        # Determine the maximum size that fits in the available box while preserving AR
+        aspect_ratio = self.AR_W / self.AR_H  # ~1.29 (w/h)
+
+        calc_h = int(w_avail / aspect_ratio)
+        calc_w = int(h_avail * aspect_ratio)
+
+        if calc_h <= h_avail:
+            new_w, new_h = w_avail, calc_h
+        else:
+            new_w, new_h = calc_w, h_avail
+
+        # If size did not change, nothing to do
+        if new_w == self.last_size[0] and new_h == self.last_size[1]:
+            return
+
+        self.last_size = (new_w, new_h)
+        self._create_disconnected_placeholder()
+
         if self.last_frame is not None:
-            self.render_frame(self.last_frame, size=(w, h))
-        elif not self.camera.is_connected: # If camera is disconnected, show updated placeholder
+            self.render_frame(self.last_frame, size=self.last_size)
+        elif not self.camera.is_connected:
             self._show_disconnected_placeholder()
-        # If camera is connected but last_frame is None (e.g. initial state before first frame)
-        # it will be handled by update_image subsequently.
 
     def update_image(self):
         if not self.running:
@@ -386,3 +410,24 @@ class HeatmapView(ttk.Frame):
         self.running = False
         if self.after_id:
             self.after_cancel(self.after_id) 
+
+    # --- External helper to enforce a fixed target size ---
+    def set_target_size(self, width: int, height: int):
+        """Set a desired display size for the heatmap image (maintains aspect ratio internally)."""
+        # Adjust to maintain internal AR strictly
+        aspect_ratio = self.AR_W / self.AR_H
+        height_from_w = int(width / aspect_ratio)
+        width_from_h = int(height * aspect_ratio)
+
+        # Choose the smaller constraint to avoid stretching
+        if height_from_w <= height:
+            self.last_size = (max(1,width), max(1,height_from_w))
+        else:
+            self.last_size = (max(1,width_from_h), max(1,height))
+
+        # Trigger a re-render or placeholder update with new size
+        self._create_disconnected_placeholder()
+        if self.last_frame is not None:
+            self.render_frame(self.last_frame, size=self.last_size)
+        elif not self.camera.is_connected:
+            self._show_disconnected_placeholder() 
