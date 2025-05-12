@@ -112,7 +112,7 @@ class SenxorApp(ttk.Frame):
         self.sample_number_var = tk.StringVar()
         self.colormap_var = tk.StringVar(value='Viridis')
         self.show_hot_spot_var = tk.BooleanVar(value=True)
-        self.show_cold_spot_var = tk.BooleanVar(value=True)
+        self.show_cold_spot_var = tk.BooleanVar(value=False)
         # Global Max Voltage
         self.max_voltage_var = tk.DoubleVar(value=5.0)
 

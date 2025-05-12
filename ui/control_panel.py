@@ -85,13 +85,13 @@ class ControlPanel(ttk.LabelFrame):
         Tooltip(self.vsu_step_size_spin, "Voltage increment for each step.")
         # Stabilization Window
         ttk.Label(self.vsu_params_frame, text="Stabilization Window (s):", style='Content.TLabel').grid(row=2, column=0, sticky='w', padx=5, pady=2)
-        self.vsu_stab_window_var = tk.DoubleVar(value=2.0)
+        self.vsu_stab_window_var = tk.DoubleVar(value=10.0)
         self.vsu_stab_window_spin = ttk.Spinbox(self.vsu_params_frame, from_=1, to=60, increment=0.5, textvariable=self.vsu_stab_window_var, width=7)
         self.vsu_stab_window_spin.grid(row=2, column=1, sticky='ew', padx=5, pady=2)
         Tooltip(self.vsu_stab_window_spin, "How many seconds of stable temperature are required before stepping up.")
         # Stabilization Threshold
         ttk.Label(self.vsu_params_frame, text="Stabilization Threshold (°C):", style='Content.TLabel').grid(row=3, column=0, sticky='w', padx=5, pady=2)
-        self.vsu_stab_thresh_var = tk.DoubleVar(value=0.2)
+        self.vsu_stab_thresh_var = tk.DoubleVar(value=3.0)
         self.vsu_stab_thresh_spin = ttk.Spinbox(self.vsu_params_frame, from_=0.01, to=2, increment=0.01, textvariable=self.vsu_stab_thresh_var, width=7)
         self.vsu_stab_thresh_spin.grid(row=3, column=1, sticky='ew', padx=5, pady=2)
         Tooltip(self.vsu_stab_thresh_spin, "Max allowed temperature fluctuation (°C) to consider stable.")
