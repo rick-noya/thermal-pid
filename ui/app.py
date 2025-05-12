@@ -104,15 +104,29 @@ class SenxorApp(ttk.Frame):
                                 # borderwidth=1, relief='solid', bordercolor=COLOR_SECONDARY_ACCENT # Temporarily removed for testing
                                 )
 
+        # --- Shared Camera View Settings Variables ---
+        # Initialize these variables here to be used by both the settings panel and heatmap views
+        self.hot_smooth_len_var = tk.IntVar(value=10)
+        self.cold_smooth_len_var = tk.IntVar(value=10)
+        self.sample_number_var = tk.StringVar()
+        self.colormap_var = tk.StringVar(value='Viridis')
+
+        # Trace smoothing changes to update heatmap views
+        def _propagate_smoothing(*args):
+            for hv in getattr(self, 'heatmap_views', []):
+                hv.on_smooth_len_change()
+        self.hot_smooth_len_var.trace_add('write', _propagate_smoothing)
+        self.cold_smooth_len_var.trace_add('write', _propagate_smoothing)
+        
         # --- Scrollable Area Setup ---
         # Outer frame to hold canvas and scrollbar
-        scroll_outer_frame = ttk.Frame(self, style='TFrame') 
+        scroll_outer_frame = ttk.Frame(self, style='TFrame')
         scroll_outer_frame.pack(fill='both', expand=True, padx=10, pady=10)
         scroll_outer_frame.grid_rowconfigure(0, weight=1)
         scroll_outer_frame.grid_columnconfigure(0, weight=1)
 
         # Canvas widget
-        self.canvas = Canvas(scroll_outer_frame, bg=COLOR_FRAME_BG, highlightthickness=0) # Match content bg
+        self.canvas = Canvas(scroll_outer_frame, bg=COLOR_FRAME_BG, highlightthickness=0)
         self.canvas.grid(row=0, column=0, sticky='nsew')
 
         # Vertical scrollbar
@@ -121,78 +135,79 @@ class SenxorApp(ttk.Frame):
         self.canvas.configure(yscrollcommand=v_scrollbar.set)
 
         # Frame inside the canvas that will contain the actual content
-        # This is the frame that will be scrolled.
         self.scrollable_inner_frame = ttk.Frame(self.canvas, style='Content.TFrame')
         self.canvas.create_window((0, 0), window=self.scrollable_inner_frame, anchor='nw', tags="scrollable_frame")
 
         # Update scrollregion when the inner frame size changes
         self.scrollable_inner_frame.bind("<Configure>", self._on_inner_frame_configure)
-        
-        # Bind mouse wheel scrolling (platform-dependent)
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel) # Windows/macOS
-        self.canvas.bind_all("<Button-4>", self._on_mousewheel)    # Linux (scroll up)
-        self.canvas.bind_all("<Button-5>", self._on_mousewheel)    # Linux (scroll down)
+
+        # Bind mouse wheel scrolling
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        self.canvas.bind_all("<Button-4>", self._on_mousewheel)
+        self.canvas.bind_all("<Button-5>", self._on_mousewheel)
 
         # --- Content Layout within the Scrollable Frame ---
-        # Previously `main_content_frame`, now put content into `scrollable_inner_frame`
-        # Let's rename main_content_frame to scrollable_inner_frame for clarity in this edit block
-        main_content_frame = self.scrollable_inner_frame # Content now goes here
+        # Configure columns: col 0 for content, col 1 for potential future use or alignment
+        self.scrollable_inner_frame.columnconfigure(0, weight=1)
+        self.scrollable_inner_frame.columnconfigure(1, weight=0) # Settings button goes here
 
-        # Status bar
-        self.status_bar_view = StatusBarView(main_content_frame, style='TFrame')
-        self.status_bar_view.grid(row=0, column=0, sticky='ew', pady=(0,5))
+        # --- Row 0: Status Bar and Settings Button ---
+        status_settings_frame = ttk.Frame(self.scrollable_inner_frame, style='TFrame') # Use TFrame for background match
+        status_settings_frame.grid(row=0, column=0, columnspan=2, sticky='ew', pady=(0,5))
+        status_settings_frame.columnconfigure(0, weight=1) # Status bar takes available space
+        status_settings_frame.columnconfigure(1, weight=0) # Button takes fixed space
+
+        self.status_bar_view = StatusBarView(status_settings_frame, style='TFrame')
+        self.status_bar_view.grid(row=0, column=0, sticky='ew')
         status_update_method = self.status_bar_view.set_status
 
-        # Top row: PanedWindow for control panel and the camera display area
-        self.top_paned = ttk.PanedWindow(main_content_frame, orient='horizontal')
-        self.top_paned.grid(row=1, column=0, sticky='nsew', pady=(0,10))
+        self.settings_btn = ttk.Button(status_settings_frame, text='⚙ Settings', command=self._toggle_settings_panel, style='TButton')
+        self.settings_btn.grid(row=0, column=1, sticky='e', padx=(10,0))
+        Tooltip(self.settings_btn, "Show/Hide Display Settings Panel")
+
+        # --- Row 1: Settings Panel (Hidden by default) ---
+        self.settings_panel_visible = False
+        self._create_settings_panel(style) # Will place itself in row 1
+
+        # --- Row 2: PanedWindow (Controls + Cameras) ---
+        self.top_paned = ttk.PanedWindow(self.scrollable_inner_frame, orient='horizontal')
+        self.top_paned.grid(row=2, column=0, columnspan=2, sticky='nsew', pady=(0,10))
 
         # Control Panel
-        self.control_panel = ControlPanel(self.top_paned, 
-                                          pid=self.pid, 
-                                          siggen=self.siggen, 
-                                          camera_manager=self.camera_manager, 
+        self.control_panel = ControlPanel(self.top_paned,
+                                          pid=self.pid,
+                                          siggen=self.siggen,
+                                          camera_manager=self.camera_manager,
                                           data_aggregator=self.data_aggregator,
-                                          set_status=status_update_method, 
+                                          set_status=status_update_method,
                                           style='Content.TFrame')
-        
+
         # Camera Display Area Frame
         self.camera_frame = ttk.Frame(self.top_paned, style='Content.TFrame')
 
-        # Initialize Master Camera Controls (if needed, ensure parent is correct frame)
-        # This method likely adds widgets to self.camera_frame, which is okay
-        self._init_master_camera_controls(style) 
+        # Initialize Master Camera Controls (Now only snapshot button)
+        self._init_master_camera_controls(style)
 
         self.heatmap_views = []
-        # Populate cameras after layout (no change needed here)
         self.after(0, self._populate_camera_views)
-
-        # Trend Graph
-        self.trend_graph = TrendGraph(main_content_frame, set_status=status_update_method, style='Content.TFrame')
-        
-        # --- Wiring TrendGraph --- 
-        # (No change needed here)
-        if self.heatmap_views:
-            self.heatmap_views[0].trend_graph = self.trend_graph 
-        else:
-            pass 
 
         # Add panels to PanedWindow
         self.top_paned.add(self.control_panel, weight=1)
         self.top_paned.add(self.camera_frame,   weight=2)
 
-        # Position Trend Graph
-        self.trend_graph.grid(row=2, column=0, sticky='nsew')
+        # --- Row 3: Trend Graph ---
+        self.trend_graph = TrendGraph(self.scrollable_inner_frame, set_status=status_update_method, style='Content.TFrame')
+        self.trend_graph.grid(row=3, column=0, columnspan=2, sticky='nsew')
 
-        # Configure resizing behavior *within* the scrollable frame
-        main_content_frame.columnconfigure(0, weight=1)
-        main_content_frame.rowconfigure(0, weight=0)  # Status bar - no vertical expansion
-        main_content_frame.rowconfigure(1, weight=1)  # Paned window (CP + Heatmap) - Give it weight 1
-        main_content_frame.rowconfigure(2, weight=1)  # Trend graph - Give it weight 1
+        # Configure row weights *within* the scrollable frame
+        self.scrollable_inner_frame.rowconfigure(0, weight=0)  # Status/Settings Btn row
+        self.scrollable_inner_frame.rowconfigure(1, weight=0)  # Settings Panel (dynamically managed)
+        self.scrollable_inner_frame.rowconfigure(2, weight=1)  # Paned window (CP + Heatmap)
+        self.scrollable_inner_frame.rowconfigure(3, weight=1)  # Trend graph
 
         # Set initial PanedWindow sash position
         self.after(100, self.set_initial_pane_proportions)
-        
+
         # Configure trend graph export
         self.trend_graph.export_btn.configure(command=self._export_trend_data_coordinated)
 
@@ -204,20 +219,9 @@ class SenxorApp(ttk.Frame):
         self.after(pid_sample_ms, self._update_pid_output)
 
         self.last_pid_output_time = 0
-        
-        # Bind canvas width change to update the inner frame width for proper layout
-        self.canvas.bind("<Configure>", self._on_canvas_configure)
 
-        # --- Settings Dropdown Panel ---
-        self.settings_panel_visible = False
-        self._create_settings_dropdown_panel(style)
-        
-        # Add a settings button to the top right of the scrollable_inner_frame
-        self.settings_btn = ttk.Button(self.scrollable_inner_frame, text='⚙ Settings', command=self._toggle_settings_panel, style='TButton')
-        self.settings_btn.grid(row=0, column=1, sticky='ne', padx=(0,10), pady=(0,5))
-        # Adjust status bar to only take left side
-        self.status_bar_view.grid_configure(sticky='w', column=0)
-        self.scrollable_inner_frame.grid_columnconfigure(1, weight=0)
+        # Bind canvas width change to update the inner frame width
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
 
     def _on_canvas_configure(self, event):
         """Dynamically set the width of the inner frame to match the canvas width."""
@@ -407,106 +411,81 @@ class SenxorApp(ttk.Frame):
             # Reschedule the next update
             self.after(reschedule_delay_ms, self._update_pid_output) 
 
-    # ----------------- Master Controls -----------------
+    # ----------------- Master Controls (Simplified) -----------------
     def _init_master_camera_controls(self, style):
-        # Shared variables
-        self.hot_smooth_len_var = tk.IntVar(value=10)
-        self.cold_smooth_len_var = tk.IntVar(value=10)
-        self.sample_number_var = tk.StringVar()
-        self.colormap_var = tk.StringVar(value='Viridis')
+        # This frame now sits ABOVE the camera views grid
+        # It only contains controls shared across all cameras that AREN'T in the settings panel.
+        # Currently, just the Snapshot button.
+
+        # We still need the shared variables initialized (moved to __init__)
+        # We still need the propagation traces set (moved to __init__)
 
         controls_frame = ttk.Frame(self.camera_frame, style='Content.TFrame', padding=(5,5))
-        controls_frame.grid(row=0, column=0, columnspan=2, sticky='ew', padx=5, pady=5)
+        controls_frame.grid(row=0, column=0, columnspan=2, sticky='ew', padx=5, pady=5) # Span columns used by cameras
 
-        # Layout
-        controls_frame.columnconfigure(0, weight=1)
-        controls_frame.columnconfigure(1, weight=1)
-        controls_frame.columnconfigure(2, weight=0)
-        controls_frame.columnconfigure(3, weight=1)
-        controls_frame.columnconfigure(4, weight=1)
-
-        # Smoothing sliders
-        smoothing_group = ttk.Frame(controls_frame, style='Content.TFrame')
-        smoothing_group.grid(row=0, column=0, columnspan=2, sticky='ew', padx=(0,10))
-        smoothing_group.columnconfigure(1, weight=1)
-        smoothing_group.columnconfigure(3, weight=1)
-
-        ttk.Label(smoothing_group, text="Hot Spot Smooth (frames):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=2, pady=2)
-        hot_slider = ttk.Scale(smoothing_group, from_=1, to=30, variable=self.hot_smooth_len_var, orient='horizontal', length=120)
-        hot_slider.grid(row=0, column=1, sticky='ew', padx=5, pady=2)
-
-        ttk.Label(smoothing_group, textvariable=self.hot_smooth_len_var, style='Content.TLabel', width=3).grid(row=0, column=2, sticky='w', padx=2)
-
-        ttk.Label(smoothing_group, text="Cold Spot Smooth (frames):", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=2, pady=2)
-        cold_slider = ttk.Scale(smoothing_group, from_=1, to=30, variable=self.cold_smooth_len_var, orient='horizontal', length=120)
-        cold_slider.grid(row=1, column=1, sticky='ew', padx=5, pady=2)
-
-        ttk.Label(smoothing_group, textvariable=self.cold_smooth_len_var, style='Content.TLabel', width=3).grid(row=1, column=2, sticky='w', padx=2)
-
-        # Sample Number
-        sample_group = ttk.Frame(controls_frame, style='Content.TFrame')
-        sample_group.grid(row=0, column=2, sticky='ew', padx=5)
-        sample_group.columnconfigure(1, weight=1)
-        ttk.Label(sample_group, text="Sample #:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=(5,2), pady=2)
-        ttk.Entry(sample_group, textvariable=self.sample_number_var, width=10).grid(row=0, column=1, sticky='ew', padx=(0,5), pady=2)
-
-        # Colormap selector
-        cmap_group = ttk.Frame(controls_frame, style='Content.TFrame')
-        cmap_group.grid(row=0, column=3, sticky='ew', padx=5)
-        cmap_group.columnconfigure(1, weight=1)
-        ttk.Label(cmap_group, text="Colormap:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=2, pady=2)
-        ttk.OptionMenu(cmap_group, self.colormap_var, self.colormap_var.get(), 'Jet','Hot','Magma','Inferno','Plasma','Viridis','Cividis','Twilight','Turbo').grid(row=0, column=1, sticky='ew', padx=2, pady=2)
+        # Configure layout - Make the snapshot button align to the right
+        controls_frame.columnconfigure(0, weight=1) # Empty space pushes button right
+        controls_frame.columnconfigure(1, weight=0) # Button takes needed space
 
         # Snapshot button
         snapshot_btn = ttk.Button(controls_frame, text="Save Snapshot", command=self._snapshot_all)
-        snapshot_btn.grid(row=0, column=4, padx=10, pady=2, sticky='e')
-
-        # Variable traces to propagate smoothing changes
-        def _propagate(*args):
-            for hv in getattr(self, 'heatmap_views', []):
-                hv.on_smooth_len_change()
-
-        self.hot_smooth_len_var.trace_add('write', _propagate)
-        self.cold_smooth_len_var.trace_add('write', _propagate)
+        snapshot_btn.grid(row=0, column=1, padx=5, pady=2, sticky='e') # Grid to the right
+        Tooltip(snapshot_btn, "Save thermal data (CSV) and image (PNG) for the primary camera.")
 
     def _snapshot_all(self):
-        # Save snapshot for each camera (or just first)
+        # Save snapshot for the first camera view as before.
+        # Consider adding options later to snapshot all or select which one.
         if self.heatmap_views:
-            self.heatmap_views[0].save_snapshot() 
+            self.heatmap_views[0].save_snapshot()
 
-    def _create_settings_dropdown_panel(self, style):
-        self.settings_panel = ttk.Frame(self.scrollable_inner_frame, style='Content.TFrame', padding=(10,10))
-        self.settings_panel.grid(row=1, column=0, columnspan=2, sticky='ew', padx=10, pady=(0,10))
-        self.settings_panel.grid_remove()  # Hide by default
-        self.scrollable_inner_frame.grid_rowconfigure(1, weight=0)
+    def _create_settings_panel(self, style):
+        self.settings_panel = ttk.LabelFrame(self.scrollable_inner_frame, text="Display Settings", style='TLabelframe', padding=(10,10))
+        # Position in row 1, spanning columns
+        self.settings_panel.grid(row=1, column=0, columnspan=2, sticky='new', padx=10, pady=(5,10))
+        self.settings_panel.grid_remove() # Hide by default
+
+        # Configure columns within the settings panel for layout
+        self.settings_panel.columnconfigure(0, weight=0) # Labels
+        self.settings_panel.columnconfigure(1, weight=1) # Controls (expand)
+        self.settings_panel.columnconfigure(2, weight=0) # Value display for sliders
 
         # Colormap selector
         ttk.Label(self.settings_panel, text='Colormap:', style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
         cmap_menu = ttk.OptionMenu(self.settings_panel, self.colormap_var, self.colormap_var.get(), 'Jet','Hot','Magma','Inferno','Plasma','Viridis','Cividis','Twilight','Turbo')
         cmap_menu.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
+        Tooltip(cmap_menu, "Select the color palette for the thermal display.")
 
         # Sample Number
         ttk.Label(self.settings_panel, text='Sample #:', style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        ttk.Entry(self.settings_panel, textvariable=self.sample_number_var, width=12).grid(row=1, column=1, sticky='ew', padx=5, pady=5)
+        sample_entry = ttk.Entry(self.settings_panel, textvariable=self.sample_number_var, width=15)
+        sample_entry.grid(row=1, column=1, sticky='ew', padx=5, pady=5)
+        Tooltip(sample_entry, "Identifier for the current sample/test run (used in snapshot filenames).")
 
-        # Smoothing sliders
+        # Smoothing sliders - Hot
         ttk.Label(self.settings_panel, text='Hot Spot Smooth (frames):', style='Content.TLabel').grid(row=2, column=0, sticky='w', padx=5, pady=5)
-        hot_slider = ttk.Scale(self.settings_panel, from_=1, to=30, variable=self.hot_smooth_len_var, orient='horizontal', length=120)
+        hot_slider = ttk.Scale(self.settings_panel, from_=1, to=30, variable=self.hot_smooth_len_var, orient='horizontal', length=150)
         hot_slider.grid(row=2, column=1, sticky='ew', padx=5, pady=5)
-        ttk.Label(self.settings_panel, textvariable=self.hot_smooth_len_var, style='Content.TLabel', width=3).grid(row=2, column=2, sticky='w', padx=2)
+        ttk.Label(self.settings_panel, textvariable=self.hot_smooth_len_var, style='Content.TLabel', width=3).grid(row=2, column=2, sticky='w', padx=(0, 5))
+        Tooltip(hot_slider, "Number of frames to average for the hot spot marker position (1-30).")
 
+        # Smoothing sliders - Cold
         ttk.Label(self.settings_panel, text='Cold Spot Smooth (frames):', style='Content.TLabel').grid(row=3, column=0, sticky='w', padx=5, pady=5)
-        cold_slider = ttk.Scale(self.settings_panel, from_=1, to=30, variable=self.cold_smooth_len_var, orient='horizontal', length=120)
+        cold_slider = ttk.Scale(self.settings_panel, from_=1, to=30, variable=self.cold_smooth_len_var, orient='horizontal', length=150)
         cold_slider.grid(row=3, column=1, sticky='ew', padx=5, pady=5)
-        ttk.Label(self.settings_panel, textvariable=self.cold_smooth_len_var, style='Content.TLabel', width=3).grid(row=3, column=2, sticky='w', padx=2)
+        ttk.Label(self.settings_panel, textvariable=self.cold_smooth_len_var, style='Content.TLabel', width=3).grid(row=3, column=2, sticky='w', padx=(0, 5))
+        Tooltip(cold_slider, "Number of frames to average for the cold spot marker position (1-30).")
 
-        # Close button
-        close_btn = ttk.Button(self.settings_panel, text='Close', command=self._toggle_settings_panel, style='TButton')
-        close_btn.grid(row=4, column=0, columnspan=3, pady=(10,0))
+        # Close button for the panel (optional, could just use the toggle button)
+        # close_btn = ttk.Button(self.settings_panel, text='Hide Settings', command=self._toggle_settings_panel, style='TButton')
+        # close_btn.grid(row=4, column=0, columnspan=3, pady=(15,0))
 
     def _toggle_settings_panel(self):
         self.settings_panel_visible = not self.settings_panel_visible
         if self.settings_panel_visible:
-            self.settings_panel.grid()
+            self.settings_panel.grid() # Show the panel
+            # Optionally, adjust row weights if needed, but grid() should be enough if rowconfigure is set
         else:
-            self.settings_panel.grid_remove() 
+            self.settings_panel.grid_remove() # Hide the panel
+        # Force geometry update to reflect potential changes
+        self.scrollable_inner_frame.update_idletasks()
+        self.canvas.configure(scrollregion=self.canvas.bbox("all")) 
