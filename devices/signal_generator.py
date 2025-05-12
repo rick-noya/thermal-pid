@@ -76,6 +76,8 @@ class SignalGenerator:
     def set_voltage(self, voltage_v: float):
         mv = int(voltage_v * 1000)
         self.raw_command(f":w25={mv}.")
+        # Cache the voltage for later retrieval (e.g., for trend graph)
+        self.current_voltage = voltage_v
 
     def output_on(self):
         self.raw_command(":w21=1.")

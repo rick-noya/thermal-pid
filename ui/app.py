@@ -339,11 +339,11 @@ class SenxorApp(ttk.Frame):
 
         # If tiles would exceed max height, shrink them proportionally
         if tile_h * rows + (rows + 1) * padding_px > max_total_h:
-            if rows > 0: # Avoid division by zero if rows is 0
-            tile_h = int((max_total_h - (rows + 1) * padding_px) / rows)
-            tile_w = max(1, int(tile_h / TILE_RATIO))
-            else: # Should not happen if active_cameras is not empty
-                tile_h = 50 # Fallback
+            if rows > 0:  # Avoid division by zero if rows is 0
+                tile_h = int((max_total_h - (rows + 1) * padding_px) / rows)
+                tile_w = max(1, int(tile_h / TILE_RATIO))
+            else:  # Should not happen if active_cameras is not empty
+                tile_h = 50  # Fallback
                 tile_w = int(tile_h / TILE_RATIO)
 
 
@@ -631,11 +631,8 @@ class SenxorApp(ttk.Frame):
 
         # Voltage: if available from PID or siggen, otherwise 0.0
         voltage = 0.0
-        if hasattr(self, 'siggen') and hasattr(self.siggen, 'get_voltage'):
-            try:
-                voltage = float(self.siggen.get_voltage())
-            except Exception:
-                voltage = 0.0
+        if hasattr(self, 'siggen') and hasattr(self.siggen, 'current_voltage'):
+            voltage = float(getattr(self.siggen, 'current_voltage', 0.0))
         elif hasattr(self, 'pid') and hasattr(self.pid, 'last_output'):
             voltage = float(getattr(self.pid, 'last_output', 0.0))
 
