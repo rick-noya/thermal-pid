@@ -19,7 +19,7 @@ COLORMAPS = {
 }
 
 class HeatmapView(ttk.Frame):
-    def __init__(self, master, camera, trend_graph=None, set_status=None, style='Content.TFrame', show_controls=True, **kwargs):
+    def __init__(self, master, camera, trend_graph=None, set_status=None, style='Content.TFrame', show_controls=True, colormap_var=None, hot_smooth_len_var=None, cold_smooth_len_var=None, **kwargs):
         super().__init__(master, style=style, **kwargs)
         self.camera = camera
         self.trend_graph = trend_graph
@@ -43,6 +43,9 @@ class HeatmapView(ttk.Frame):
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
 
+        # --- Rotation state ---
+        self.rotation = 0  # Degrees: 0, 90, 180, 270
+
         # --- Controls frame (optional) ---
         self.controls_frame = ttk.Frame(self, style='Content.TFrame', padding=(5,5))
         if show_controls:
@@ -55,65 +58,26 @@ class HeatmapView(ttk.Frame):
             self.controls_frame.columnconfigure(2, weight=0) # Sample Number (less weight, fixed size)
             self.controls_frame.columnconfigure(3, weight=1) # Colormap label + optionmenu
             self.controls_frame.columnconfigure(4, weight=1) # Snapshot button
+            self.controls_frame.columnconfigure(5, weight=0) # Rotation button
 
-        # Smoothing controls group
-        smoothing_group = ttk.Frame(self.controls_frame, style='Content.TFrame')
+        # Rotate button
         if show_controls:
-            smoothing_group.grid(row=0, column=0, columnspan=2, sticky='ew', padx=(0,10))
-        smoothing_group.columnconfigure(1, weight=1) # Slider 1
-        smoothing_group.columnconfigure(3, weight=1) # Slider 2
-
-        ttk.Label(smoothing_group, text="Hot Spot Smooth (frames):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=2, pady=2)
-        self.hot_smooth_len_var = tk.IntVar(value=10)
-        hot_slider = ttk.Scale(smoothing_group, from_=1, to=30, variable=self.hot_smooth_len_var, orient='horizontal', length=120, command=self.on_smooth_len_change)
-        hot_slider.grid(row=0, column=1, sticky='ew', padx=5, pady=2)
-        Tooltip(hot_slider, "Number of frames to average for hot spot marker position (1-30).")
-        # Display current value for slider
-        self.hot_smooth_display = ttk.Label(smoothing_group, textvariable=self.hot_smooth_len_var, style='Content.TLabel', width=3)
-        self.hot_smooth_display.grid(row=0, column=2, sticky='w', padx=2)
-
-        ttk.Label(smoothing_group, text="Cold Spot Smooth (frames):", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=2, pady=2)
-        self.cold_smooth_len_var = tk.IntVar(value=10)
-        cold_slider = ttk.Scale(smoothing_group, from_=1, to=30, variable=self.cold_smooth_len_var, orient='horizontal', length=120, command=self.on_smooth_len_change)
-        cold_slider.grid(row=1, column=1, sticky='ew', padx=5, pady=2)
-        Tooltip(cold_slider, "Number of frames to average for cold spot marker position (1-30).")
-        self.cold_smooth_display = ttk.Label(smoothing_group, textvariable=self.cold_smooth_len_var, style='Content.TLabel', width=3)
-        self.cold_smooth_display.grid(row=1, column=2, sticky='w', padx=2)
-
-        # Sample Number Input Group
-        sample_info_group = ttk.Frame(self.controls_frame, style='Content.TFrame')
-        if show_controls:
-            sample_info_group.grid(row=0, column=2, sticky='ew', padx=5)
-        sample_info_group.columnconfigure(1, weight=1) # Entry expands
-        ttk.Label(sample_info_group, text="Sample #:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=(5,2), pady=2)
-        self.sample_number_var = tk.StringVar()
-        sample_entry = ttk.Entry(sample_info_group, textvariable=self.sample_number_var, width=10)
-        sample_entry.grid(row=0, column=1, sticky='ew', padx=(0,5), pady=2)
-        Tooltip(sample_entry, "Enter the sample identifier for this test run.")
-
-        # Colormap selector group
-        colormap_group = ttk.Frame(self.controls_frame, style='Content.TFrame')
-        if show_controls:
-            colormap_group.grid(row=0, column=3, sticky='ew', padx=5) # Shifted to column 3
-        colormap_group.columnconfigure(1, weight=1)
-        ttk.Label(colormap_group, text="Colormap:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=2, pady=2)
-        self.colormap_var = tk.StringVar(value='Viridis') # Changed default to Viridis
-        colormap_menu = ttk.OptionMenu(colormap_group, self.colormap_var, self.colormap_var.get(), *COLORMAPS.keys())
-        colormap_menu.grid(row=0, column=1, sticky='ew', padx=2, pady=2)
-        Tooltip(colormap_menu, "Select the color palette for the heatmap display.")
-
-        # Snapshot button
-        self.snapshot_btn = ttk.Button(self.controls_frame, text="Save Snapshot", command=self.save_snapshot)
-        if show_controls:
-            self.snapshot_btn.grid(row=0, column=4, padx=10, pady=2, sticky='e') # Shifted to column 4
-        Tooltip(self.snapshot_btn, "Save the current thermal data as a CSV file and image.")
+            self.rotate_btn = ttk.Button(self.controls_frame, text="⟳ Rotate", command=self.rotate_view)
+            self.rotate_btn.grid(row=0, column=5, padx=5, pady=2, sticky='e')
+            Tooltip(self.rotate_btn, "Rotate the camera view 90° clockwise.")
 
         # Hot/cold position history (deque for last N)
-        self.hot_history = deque(maxlen=self.hot_smooth_len_var.get())
-        self.cold_history = deque(maxlen=self.cold_smooth_len_var.get())
+        self.hot_history = deque(maxlen=10)
+        self.cold_history = deque(maxlen=10)
 
         self.img_label.bind('<Configure>', self.on_img_label_resize)
         Tooltip(self.img_label, "Live thermal image. Drag the window divider to resize.")
+
+        # Use global variables if provided
+        self.colormap_var = colormap_var
+        self.hot_smooth_len_var = hot_smooth_len_var
+        self.cold_smooth_len_var = cold_smooth_len_var
+
         self._create_disconnected_placeholder() # Create placeholder once
         self.update_image()
 
@@ -158,21 +122,6 @@ class HeatmapView(ttk.Frame):
 
     def get_sample_number(self) -> str:
         return self.sample_number_var.get().strip()
-
-    def on_smooth_len_change(self, value=None): # Value from scale is string, convert if needed
-        # Recreate deques with new maxlen
-        # It's important to handle potential partial data if deques are shortened
-        # For simplicity, we just create new ones. Old history is lost on change.
-        new_hot_len = self.hot_smooth_len_var.get()
-        if new_hot_len < 1: new_hot_len = 1 # Ensure positive
-        if not hasattr(self, 'hot_history') or self.hot_history.maxlen != new_hot_len:
-            self.hot_history = deque(maxlen=new_hot_len)
-
-        new_cold_len = self.cold_smooth_len_var.get()
-        if new_cold_len < 1: new_cold_len = 1
-        if not hasattr(self, 'cold_history') or self.cold_history.maxlen != new_cold_len:
-            self.cold_history = deque(maxlen=new_cold_len)
-        # self.set_status(f"Smoothing history set to: Hot {new_hot_len}, Cold {new_cold_len}")
 
     def on_img_label_resize(self, event):
         """Maintain 80x62 aspect ratio when the containing widget is resized."""
@@ -299,6 +248,14 @@ class HeatmapView(ttk.Frame):
         color_img = cv.applyColorMap(norm, cmap_cv)
         color_img = cv.resize(color_img, size, interpolation=cv.INTER_LINEAR) # INTER_LINEAR is faster
         
+        # --- Apply rotation ---
+        if self.rotation == 90:
+            color_img = cv.rotate(color_img, cv.ROTATE_90_CLOCKWISE)
+        elif self.rotation == 180:
+            color_img = cv.rotate(color_img, cv.ROTATE_180)
+        elif self.rotation == 270:
+            color_img = cv.rotate(color_img, cv.ROTATE_90_COUNTERCLOCKWISE)
+
         show_hot = getattr(self, 'show_hot_spot_var', None)
         show_cold = getattr(self, 'show_cold_spot_var', None)
         show_hot = show_hot.get() if show_hot is not None else True
@@ -346,68 +303,6 @@ class HeatmapView(ttk.Frame):
         self.img_label.imgtk = img_tk
         self.img_label.configure(image=img_tk)
 
-    def save_snapshot(self):
-        if self.last_frame is not None:
-            import time
-            timestamp = time.strftime('%Y%m%d-%H%M%S')
-            sample_name = self.get_sample_number()
-            
-            if sample_name:
-                base_filename = f"{sample_name}_snapshot_{timestamp}"
-            else:
-                base_filename = f"snapshot_{timestamp}"
-            
-            csv_filename = f"{base_filename}.csv"
-            img_filename = f"{base_filename}.png"
-
-            try:
-                np.savetxt(csv_filename, self.last_frame, delimiter=",", fmt="%.2f")
-                self.set_status(f"Snapshot data saved to {csv_filename}")
-                
-                # Save the current visual frame as well (the one with overlays)
-                if hasattr(self.img_label, 'imgtk') and self.img_label.imgtk:
-                    # We have the PhotoImage, try to get PIL Image from it
-                    # This depends on how PhotoImage was created. If from PIL, it might have a reference.
-                    # A more robust way: re-render the last frame to a PIL Image for saving.
-                    
-                    # Re-render for saving to ensure it's the latest with current colormap etc.
-                    min_temp, max_temp = np.min(self.last_frame), np.max(self.last_frame)
-                    norm_save = ((np.clip(self.last_frame, min_temp, max_temp) - min_temp) / (max_temp - min_temp + 1e-6) * 255).astype(np.uint8)
-                    cmap_cv_save = COLORMAPS.get(self.colormap_var.get(), cv.COLORMAP_VIRIDIS)
-                    color_img_save = cv.applyColorMap(norm_save, cmap_cv_save)
-                    # Resize to a reasonable snapshot size, not necessarily current display size
-                    # Let's use a fixed medium size or original camera resolution if known
-                    # For now, using a fixed size like 640x480 for the saved image
-                    snapshot_disp_size = (640, 480) 
-                    try: # Attempt to get original frame dimensions for aspect ratio correct resize
-                        orig_h, orig_w = self.last_frame.shape[:2]
-                        aspect_ratio = orig_w / orig_h
-                        target_h = snapshot_disp_size[1]
-                        target_w = int(target_h * aspect_ratio)
-                        if target_w > snapshot_disp_size[0]: # if too wide, constrain by width
-                            target_w = snapshot_disp_size[0]
-                            target_h = int(target_w / aspect_ratio)
-                        final_save_size = (target_w, target_h)
-                    except:
-                        final_save_size = snapshot_disp_size # fallback
-
-                    color_img_save = cv.resize(color_img_save, final_save_size, interpolation=cv.INTER_LANCZOS4) # High quality resize
-                    # Add overlays to saved image as well (optional, but good for context)
-                    # (Code for overlays could be factored into a helper if used identically here)
-                    # For brevity, skipping re-drawing overlays on saved image here, but one could add it.
-                    
-                    img_rgb_save = cv.cvtColor(color_img_save, cv.COLOR_BGR2RGB)
-                    img_pil_save = Image.fromarray(img_rgb_save)
-                    img_pil_save.save(img_filename, "PNG")
-                    self.set_status(f"Snapshot saved: {csv_filename} and {img_filename}")
-                else:
-                     self.set_status(f"Snapshot data saved to {csv_filename} (image not available)")
-
-            except Exception as e:
-                self.set_status(f"Snapshot save failed: {e}")
-        else:
-            self.set_status("No thermal frame data to save.")
-
     def stop(self):
         self.running = False
         if self.after_id:
@@ -433,3 +328,9 @@ class HeatmapView(ttk.Frame):
             self.render_frame(self.last_frame, size=self.last_size)
         elif not self.camera.is_connected:
             self._show_disconnected_placeholder() 
+
+    def rotate_view(self):
+        """Rotate the camera view by 90 degrees clockwise."""
+        self.rotation = (self.rotation + 90) % 360
+        if self.last_frame is not None:
+            self.render_frame(self.last_frame, size=self.last_size) 

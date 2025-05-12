@@ -373,7 +373,10 @@ class SenxorApp(ttk.Frame):
                 trend_graph=None,
                 set_status=self.status_bar_view.set_status,
                 style='Content.TFrame',
-                show_controls=False  # hide per-camera controls
+                show_controls=True,  # show per-camera controls (including rotate)
+                colormap_var=self.colormap_var,
+                hot_smooth_len_var=self.hot_smooth_len_var,
+                cold_smooth_len_var=self.cold_smooth_len_var
             )
             heatmap_view_instance.pack(fill='both', expand=True)
 
@@ -388,9 +391,6 @@ class SenxorApp(ttk.Frame):
             # Enforce target size & aspect ratio
             if hasattr(heatmap_view_instance, 'set_target_size'):
                 heatmap_view_instance.set_target_size(tile_w, tile_h)
-
-            # Update smoothing parameters initially
-            heatmap_view_instance.on_smooth_len_change()
 
             # Keep reference
             self.heatmap_views.append(heatmap_view_instance)
@@ -481,55 +481,10 @@ class SenxorApp(ttk.Frame):
         controls_frame.columnconfigure(0, weight=1) # Empty space pushes button right
         controls_frame.columnconfigure(1, weight=0) # Button takes needed space
 
-        # Snapshot button
-        snapshot_btn = ttk.Button(controls_frame, text="Save Snapshot", command=self._snapshot_all)
-        snapshot_btn.grid(row=0, column=1, padx=5, pady=2, sticky='e') # Grid to the right
-        Tooltip(snapshot_btn, "Save thermal data (CSV) and image (PNG) for ALL connected cameras.")
-
         # Save All Data button
         save_all_btn = ttk.Button(controls_frame, text="Save All Data", command=self._save_all_data, style='Primary.TButton')
         save_all_btn.grid(row=0, column=2, padx=5, pady=2, sticky='e')
         Tooltip(save_all_btn, "Save trend graph data and all camera data to a dated folder.")
-
-    def _snapshot_all(self):
-        """Saves snapshot data (CSV) and image (PNG) for all active cameras, including camera port in filenames."""
-        num_saved = 0
-        sample_name = self.sample_number_var.get().strip()
-        success_ports = []
-        failed_ports = []
-        failed_msgs = []
-
-        if not self.heatmap_views:
-            self.set_status("Snapshot Error: No active cameras found.")
-            return
-
-        for i, hv in enumerate(self.heatmap_views):
-            port_name = hv.camera.connected_port or f"Camera{i+1}"
-            try:
-                # Patch: temporarily override sample_number_var to include port for this snapshot
-                orig_sample = hv.sample_number_var.get()
-                hv.sample_number_var.set(f"{sample_name}_{port_name}" if sample_name else port_name)
-                hv.save_snapshot()
-                hv.sample_number_var.set(orig_sample)  # Restore original
-                num_saved += 1
-                success_ports.append(port_name)
-            except Exception as e:
-                failed_ports.append(port_name)
-                failed_msgs.append(f"{port_name}: {e}")
-                print(f"Snapshot Error ({port_name}): {e}")
-
-        if num_saved > 0 and not failed_ports:
-            self.set_status(f"Snapshots saved for all cameras: {', '.join(success_ports)}.")
-        elif num_saved > 0 and failed_ports:
-            self.set_status(f"Snapshots saved for: {', '.join(success_ports)}. Failed for: {', '.join(failed_ports)}.")
-        elif failed_ports:
-            self.set_status(f"Snapshot failed for: {', '.join(failed_ports)}.")
-        if failed_msgs:
-            import tkinter.messagebox as mb
-            mb.showerror("Snapshot Error", "\n".join(failed_msgs))
-        elif num_saved > 0:
-            import tkinter.messagebox as mb
-            mb.showinfo("Snapshot Success", f"Snapshots saved for: {', '.join(success_ports)}.")
 
     def _save_all_data(self):
         import os
