@@ -528,11 +528,15 @@ class ControlPanel(ttk.LabelFrame):
             print(error_msg) # Also print for debugging
 
     def start_voltage_stepup_strategy(self):
+        print("[VSU] Starting voltage step-up strategy...")
+        print(f"[VSU] Target temp: {self.setpoint_var.get()}, Agg mode: {self.pid_agg_mode_var.get() if hasattr(self, 'pid_agg_mode_var') else 'average_mean'}")
+        print(f"[VSU] Initial voltage: {self.vsu_initial_voltage_var.get()}, Step size: {self.vsu_step_size_var.get()}, Max voltage: {self.max_voltage_var.get() if self.max_voltage_var else 'N/A'}")
+        print(f"[VSU] Stab window: {self.vsu_stab_window_var.get()}s, Stab threshold: {self.vsu_stab_thresh_var.get()}°C")
         self._vsu_target_temp = self.setpoint_var.get()
         self._vsu_agg_mode = self.pid_agg_mode_var.get() if hasattr(self, 'pid_agg_mode_var') else 'average_mean'
         self._vsu_voltage = self.vsu_initial_voltage_var.get()
         self._vsu_step_size = self.vsu_step_size_var.get()
-        self._vsu_max_voltage = self._vsu_max_voltage
+        self._vsu_max_voltage = self.max_voltage_var.get() if self.max_voltage_var else 5.0
         self._vsu_temp_buffer = []
         # Calculate buffer size from stabilization window and interval
         self._vsu_interval_ms = 100  # ms
@@ -540,17 +544,28 @@ class ControlPanel(ttk.LabelFrame):
         self._vsu_buffer_size = max(2, int(stab_window_s * 1000 // self._vsu_interval_ms))
         self._vsu_stable_threshold = self.vsu_stab_thresh_var.get()
         self._vsu_running = True
-        self.siggen.set_voltage(self._vsu_voltage)
+        print(f"[VSU] Setting initial voltage: {self._vsu_voltage}")
+        try:
+            self.siggen.set_voltage(self._vsu_voltage)
+            print(f"[VSU] Voltage set to {self._vsu_voltage}")
+        except Exception as e:
+            print(f"[VSU] ERROR setting voltage: {e}")
+            self.set_status(f"VSU ERROR: Failed to set voltage: {e}")
+            self._vsu_running = False
+            return
         self.set_status(f"Voltage Step-Up: Set voltage to {self._vsu_voltage:.2f}V, waiting for stabilization...")
         self._vsu_step_loop()
 
     def _vsu_step_loop(self):
+        print(f"[VSU] Step loop running. Running: {self._vsu_running}")
         if not self._vsu_running:
+            print("[VSU] Not running, exiting step loop.")
             return
         # Get current temperature (using aggregator)
         temp = None
         if self.data_aggregator:
             temp = self.data_aggregator.get_frames_for_pid(aggregation_mode=self._vsu_agg_mode)
+        print(f"[VSU] Current temp: {temp}")
         if temp is not None:
             self._vsu_temp_buffer.append(temp)
             if len(self._vsu_temp_buffer) > self._vsu_buffer_size:
@@ -560,10 +575,13 @@ class ControlPanel(ttk.LabelFrame):
         if len(self._vsu_temp_buffer) == self._vsu_buffer_size:
             tmax = max(self._vsu_temp_buffer)
             tmin = min(self._vsu_temp_buffer)
+            print(f"[VSU] Buffer full. tmax: {tmax}, tmin: {tmin}, delta: {abs(tmax-tmin)}")
             if abs(tmax - tmin) < self._vsu_stable_threshold:
                 stabilized = True
+                print("[VSU] Temperature stabilized.")
         # Check if setpoint reached
         if temp is not None and temp >= self._vsu_target_temp:
+            print(f"[VSU] Setpoint reached: {temp} >= {self._vsu_target_temp}")
             self.set_status(f"Setpoint reached ({temp:.2f}°C). Switching to PID control.")
             self._vsu_running = False
             self.pid.resume()
@@ -574,14 +592,24 @@ class ControlPanel(ttk.LabelFrame):
                 self._vsu_voltage += self._vsu_step_size
                 if self._vsu_voltage > self._vsu_max_voltage:
                     self._vsu_voltage = self._vsu_max_voltage
-                self.siggen.set_voltage(self._vsu_voltage)
+                print(f"[VSU] Stepping up voltage to {self._vsu_voltage}")
+                try:
+                    self.siggen.set_voltage(self._vsu_voltage)
+                    print(f"[VSU] Voltage set to {self._vsu_voltage}")
+                except Exception as e:
+                    print(f"[VSU] ERROR setting voltage: {e}")
+                    self.set_status(f"VSU ERROR: Failed to set voltage: {e}")
+                    self._vsu_running = False
+                    return
                 self.set_status(f"Stabilized at {temp:.2f}°C. Increasing voltage to {self._vsu_voltage:.2f}V (max {self._vsu_max_voltage}V)...")
                 self._vsu_temp_buffer.clear()
             else:
+                print(f"[VSU] Max voltage reached ({self._vsu_max_voltage}V) but setpoint not achieved.")
                 self.set_status(f"Max voltage reached ({self._vsu_max_voltage}V) but setpoint not achieved.")
                 self._vsu_running = False
                 return
         # Schedule next check
+        print(f"[VSU] Scheduling next step in {self._vsu_interval_ms} ms.")
         self.after(self._vsu_interval_ms, self._vsu_step_loop)
 
     def _on_test_strategy_change(self, event=None):
