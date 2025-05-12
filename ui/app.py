@@ -127,6 +127,9 @@ class SenxorApp(ttk.Frame):
         # --- Camera Display Area (single pane, no tabs) ---
         self.camera_frame = ttk.Frame(self.top_paned, style='Content.TFrame')
 
+        # --- Master Camera Controls (single set for all cameras) ---
+        self._init_master_camera_controls(style)
+
         # Store references to all heatmap views for later access
         self.heatmap_views = []
         # Populate after the layout is in place to ensure accurate dimensions
@@ -202,8 +205,9 @@ class SenxorApp(ttk.Frame):
         # Ensure grid columns stretch evenly
         for c in range(cols):
             self.camera_frame.columnconfigure(c, weight=1)
+        # +1 to account for controls row
         for r in range(rows):
-            self.camera_frame.rowconfigure(r, weight=1)
+            self.camera_frame.rowconfigure(r + 1, weight=1)
 
         # Compute tile size respecting aspect ratio (80x62) and max half-screen height
         self.update_idletasks()  # Get accurate frame width
@@ -226,7 +230,7 @@ class SenxorApp(ttk.Frame):
             r, c = divmod(i, cols)
 
             camera_container = ttk.Frame(self.camera_frame, style='Content.TFrame', padding=(5, 5))
-            camera_container.grid(row=r, column=c, sticky='nsew', padx=padding_px, pady=padding_px)
+            camera_container.grid(row=r + 1, column=c, sticky='nsew', padx=padding_px, pady=padding_px)  # +1 to leave row 0 for controls
 
             # COM-port / identifier label
             port_name = cam_instance.connected_port or f"ID-{i}"
@@ -244,13 +248,23 @@ class SenxorApp(ttk.Frame):
                 camera=cam_instance,
                 trend_graph=None,
                 set_status=self.status_bar_view.set_status,
-                style='Content.TFrame'
+                style='Content.TFrame',
+                show_controls=False  # hide per-camera controls
             )
             heatmap_view_instance.pack(fill='both', expand=True)
+
+            # Share master control variables with this heatmap view
+            heatmap_view_instance.hot_smooth_len_var = self.hot_smooth_len_var
+            heatmap_view_instance.cold_smooth_len_var = self.cold_smooth_len_var
+            heatmap_view_instance.colormap_var = self.colormap_var
+            heatmap_view_instance.sample_number_var = self.sample_number_var
 
             # Enforce target size & aspect ratio
             if hasattr(heatmap_view_instance, 'set_target_size'):
                 heatmap_view_instance.set_target_size(tile_w, tile_h)
+
+            # Update smoothing parameters initially
+            heatmap_view_instance.on_smooth_len_change()
 
             # Keep reference
             self.heatmap_views.append(heatmap_view_instance)
@@ -327,3 +341,70 @@ class SenxorApp(ttk.Frame):
         finally:
             # Reschedule the next update
             self.after(reschedule_delay_ms, self._update_pid_output) 
+
+    # ----------------- Master Controls -----------------
+    def _init_master_camera_controls(self, style):
+        # Shared variables
+        self.hot_smooth_len_var = tk.IntVar(value=10)
+        self.cold_smooth_len_var = tk.IntVar(value=10)
+        self.sample_number_var = tk.StringVar()
+        self.colormap_var = tk.StringVar(value='Viridis')
+
+        controls_frame = ttk.Frame(self.camera_frame, style='Content.TFrame', padding=(5,5))
+        controls_frame.grid(row=0, column=0, columnspan=2, sticky='ew', padx=5, pady=5)
+
+        # Layout
+        controls_frame.columnconfigure(0, weight=1)
+        controls_frame.columnconfigure(1, weight=1)
+        controls_frame.columnconfigure(2, weight=0)
+        controls_frame.columnconfigure(3, weight=1)
+        controls_frame.columnconfigure(4, weight=1)
+
+        # Smoothing sliders
+        smoothing_group = ttk.Frame(controls_frame, style='Content.TFrame')
+        smoothing_group.grid(row=0, column=0, columnspan=2, sticky='ew', padx=(0,10))
+        smoothing_group.columnconfigure(1, weight=1)
+        smoothing_group.columnconfigure(3, weight=1)
+
+        ttk.Label(smoothing_group, text="Hot Spot Smooth (frames):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=2, pady=2)
+        hot_slider = ttk.Scale(smoothing_group, from_=1, to=30, variable=self.hot_smooth_len_var, orient='horizontal', length=120)
+        hot_slider.grid(row=0, column=1, sticky='ew', padx=5, pady=2)
+
+        ttk.Label(smoothing_group, textvariable=self.hot_smooth_len_var, style='Content.TLabel', width=3).grid(row=0, column=2, sticky='w', padx=2)
+
+        ttk.Label(smoothing_group, text="Cold Spot Smooth (frames):", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=2, pady=2)
+        cold_slider = ttk.Scale(smoothing_group, from_=1, to=30, variable=self.cold_smooth_len_var, orient='horizontal', length=120)
+        cold_slider.grid(row=1, column=1, sticky='ew', padx=5, pady=2)
+
+        ttk.Label(smoothing_group, textvariable=self.cold_smooth_len_var, style='Content.TLabel', width=3).grid(row=1, column=2, sticky='w', padx=2)
+
+        # Sample Number
+        sample_group = ttk.Frame(controls_frame, style='Content.TFrame')
+        sample_group.grid(row=0, column=2, sticky='ew', padx=5)
+        sample_group.columnconfigure(1, weight=1)
+        ttk.Label(sample_group, text="Sample #:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=(5,2), pady=2)
+        ttk.Entry(sample_group, textvariable=self.sample_number_var, width=10).grid(row=0, column=1, sticky='ew', padx=(0,5), pady=2)
+
+        # Colormap selector
+        cmap_group = ttk.Frame(controls_frame, style='Content.TFrame')
+        cmap_group.grid(row=0, column=3, sticky='ew', padx=5)
+        cmap_group.columnconfigure(1, weight=1)
+        ttk.Label(cmap_group, text="Colormap:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=2, pady=2)
+        ttk.OptionMenu(cmap_group, self.colormap_var, self.colormap_var.get(), 'Jet','Hot','Magma','Inferno','Plasma','Viridis','Cividis','Twilight','Turbo').grid(row=0, column=1, sticky='ew', padx=2, pady=2)
+
+        # Snapshot button
+        snapshot_btn = ttk.Button(controls_frame, text="Save Snapshot", command=self._snapshot_all)
+        snapshot_btn.grid(row=0, column=4, padx=10, pady=2, sticky='e')
+
+        # Variable traces to propagate smoothing changes
+        def _propagate(*args):
+            for hv in getattr(self, 'heatmap_views', []):
+                hv.on_smooth_len_change()
+
+        self.hot_smooth_len_var.trace_add('write', _propagate)
+        self.cold_smooth_len_var.trace_add('write', _propagate)
+
+    def _snapshot_all(self):
+        # Save snapshot for each camera (or just first)
+        if self.heatmap_views:
+            self.heatmap_views[0].save_snapshot() 

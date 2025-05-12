@@ -19,7 +19,7 @@ COLORMAPS = {
 }
 
 class HeatmapView(ttk.Frame):
-    def __init__(self, master, camera, trend_graph=None, set_status=None, style='Content.TFrame', **kwargs):
+    def __init__(self, master, camera, trend_graph=None, set_status=None, style='Content.TFrame', show_controls=True, **kwargs):
         super().__init__(master, style=style, **kwargs)
         self.camera = camera
         self.trend_graph = trend_graph
@@ -43,19 +43,23 @@ class HeatmapView(ttk.Frame):
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
 
-        # --- Controls frame ---
-        controls_frame = ttk.Frame(self, style='Content.TFrame', padding=(5,5))
-        controls_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=5)
-        # Configure columns for even spacing of control groups
-        controls_frame.columnconfigure(0, weight=1) # Smoothing label + slider group 1
-        controls_frame.columnconfigure(1, weight=1) # Smoothing label + slider group 2
-        controls_frame.columnconfigure(2, weight=0) # Sample Number (less weight, fixed size)
-        controls_frame.columnconfigure(3, weight=1) # Colormap label + optionmenu
-        controls_frame.columnconfigure(4, weight=1) # Snapshot button
+        # --- Controls frame (optional) ---
+        self.controls_frame = ttk.Frame(self, style='Content.TFrame', padding=(5,5))
+        if show_controls:
+            self.controls_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=5)
+
+        # Configure columns for even spacing of control groups (only if visible)
+        if show_controls:
+            self.controls_frame.columnconfigure(0, weight=1) # Smoothing label + slider group 1
+            self.controls_frame.columnconfigure(1, weight=1) # Smoothing label + slider group 2
+            self.controls_frame.columnconfigure(2, weight=0) # Sample Number (less weight, fixed size)
+            self.controls_frame.columnconfigure(3, weight=1) # Colormap label + optionmenu
+            self.controls_frame.columnconfigure(4, weight=1) # Snapshot button
 
         # Smoothing controls group
-        smoothing_group = ttk.Frame(controls_frame, style='Content.TFrame')
-        smoothing_group.grid(row=0, column=0, columnspan=2, sticky='ew', padx=(0,10))
+        smoothing_group = ttk.Frame(self.controls_frame, style='Content.TFrame')
+        if show_controls:
+            smoothing_group.grid(row=0, column=0, columnspan=2, sticky='ew', padx=(0,10))
         smoothing_group.columnconfigure(1, weight=1) # Slider 1
         smoothing_group.columnconfigure(3, weight=1) # Slider 2
 
@@ -77,8 +81,9 @@ class HeatmapView(ttk.Frame):
         self.cold_smooth_display.grid(row=1, column=2, sticky='w', padx=2)
 
         # Sample Number Input Group
-        sample_info_group = ttk.Frame(controls_frame, style='Content.TFrame')
-        sample_info_group.grid(row=0, column=2, sticky='ew', padx=5)
+        sample_info_group = ttk.Frame(self.controls_frame, style='Content.TFrame')
+        if show_controls:
+            sample_info_group.grid(row=0, column=2, sticky='ew', padx=5)
         sample_info_group.columnconfigure(1, weight=1) # Entry expands
         ttk.Label(sample_info_group, text="Sample #:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=(5,2), pady=2)
         self.sample_number_var = tk.StringVar()
@@ -87,8 +92,9 @@ class HeatmapView(ttk.Frame):
         Tooltip(sample_entry, "Enter the sample identifier for this test run.")
 
         # Colormap selector group
-        colormap_group = ttk.Frame(controls_frame, style='Content.TFrame')
-        colormap_group.grid(row=0, column=3, sticky='ew', padx=5) # Shifted to column 3
+        colormap_group = ttk.Frame(self.controls_frame, style='Content.TFrame')
+        if show_controls:
+            colormap_group.grid(row=0, column=3, sticky='ew', padx=5) # Shifted to column 3
         colormap_group.columnconfigure(1, weight=1)
         ttk.Label(colormap_group, text="Colormap:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=2, pady=2)
         self.colormap_var = tk.StringVar(value='Viridis') # Changed default to Viridis
@@ -97,8 +103,9 @@ class HeatmapView(ttk.Frame):
         Tooltip(colormap_menu, "Select the color palette for the heatmap display.")
 
         # Snapshot button
-        self.snapshot_btn = ttk.Button(controls_frame, text="Save Snapshot", command=self.save_snapshot)
-        self.snapshot_btn.grid(row=0, column=4, padx=10, pady=2, sticky='e') # Shifted to column 4
+        self.snapshot_btn = ttk.Button(self.controls_frame, text="Save Snapshot", command=self.save_snapshot)
+        if show_controls:
+            self.snapshot_btn.grid(row=0, column=4, padx=10, pady=2, sticky='e') # Shifted to column 4
         Tooltip(self.snapshot_btn, "Save the current thermal data as a CSV file and image.")
 
         # Hot/cold position history (deque for last N)
