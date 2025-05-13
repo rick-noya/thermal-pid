@@ -530,20 +530,28 @@ class SenxorApp(ttk.Frame):
         if not self.heatmap_views:
             messagebox.showerror("Save All Data", "No active cameras found.")
             return
-        for i, hv in enumerate(self.heatmap_views):
-            port_name = hv.camera.connected_port or f"Camera{i+1}"
-            try:
-                hv.save_snapshot()
-                num_saved += 1
-            except Exception as e:
-                failed_ports.append(port_name)
-                failed_msgs.append(f"{port_name}: {e}")
-        if num_saved > 0 and not failed_ports:
-            messagebox.showinfo("Save All Data", f"Trend graph and all camera snapshots saved in '{folder_name}'.")
-        elif num_saved > 0 and failed_ports:
-            messagebox.showwarning("Save All Data", f"Trend graph and some camera snapshots saved in '{folder_name}'. Failed for: {', '.join(failed_ports)}.\n{chr(10).join(failed_msgs)}")
-        elif failed_ports:
-            messagebox.showerror("Save All Data", f"Failed to save camera snapshots: {', '.join(failed_ports)}.\n{chr(10).join(failed_msgs)}")
+        orig_cwd = os.getcwd()
+        try:
+            os.chdir(folder_name)
+            for i, hv in enumerate(self.heatmap_views):
+                port_name = hv.camera.connected_port or f"Camera{i+1}"
+                try:
+                    orig_sample = hv.sample_number_var.get()
+                    hv.sample_number_var.set(f"{sample_name}_{port_name}" if sample_name else port_name)
+                    hv.save_snapshot()
+                    hv.sample_number_var.set(orig_sample)
+                    num_saved += 1
+                except Exception as e:
+                    failed_ports.append(port_name)
+                    failed_msgs.append(f"{port_name}: {e}")
+            if num_saved > 0 and not failed_ports:
+                messagebox.showinfo("Save All Data", f"Trend graph and all camera snapshots saved in '{folder_name}'.")
+            elif num_saved > 0 and failed_ports:
+                messagebox.showwarning("Save All Data", f"Trend graph and some camera snapshots saved in '{folder_name}'. Failed for: {', '.join(failed_ports)}.\n{chr(10).join(failed_msgs)}")
+            elif failed_ports:
+                messagebox.showerror("Save All Data", f"Failed to save camera snapshots: {', '.join(failed_ports)}.\n{chr(10).join(failed_msgs)}")
+        finally:
+            os.chdir(orig_cwd)
 
     def _create_settings_panel(self, style):
         self.settings_panel = ttk.LabelFrame(self.scrollable_inner_frame, text="Display Settings", style='TLabelframe', padding=(10,10))
