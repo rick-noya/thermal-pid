@@ -21,6 +21,7 @@ class ControlPanel(ttk.LabelFrame):
         self.set_status = set_status or (lambda msg: None) # Main app status
         self.columnconfigure(0, weight=1) # Make the main frame responsive
         self.max_voltage_var = max_voltage_var
+        self._save_on_setpoint_triggered = False
 
         # Store available cameras for mapping display names to indices
         self._available_cameras_map = {}
@@ -36,6 +37,7 @@ class ControlPanel(ttk.LabelFrame):
         self.setpoint_spin = ttk.Spinbox(pid_params_frame, from_=0, to=200, increment=0.5, textvariable=self.setpoint_var, width=8)
         self.setpoint_spin.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
         Tooltip(self.setpoint_spin, "Target temperature for PID control.")
+        self.setpoint_var.trace_add('write', lambda *args: self._reset_save_on_setpoint_flag())
 
         # Row 1: Test Strategy
         ttk.Label(pid_params_frame, text="Test Strategy:", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
@@ -104,6 +106,11 @@ class ControlPanel(ttk.LabelFrame):
         self.update_pid_btn = ttk.Button(pid_params_frame, text="Update PID Params", command=self.update_pid)
         self.update_pid_btn.grid(row=4, column=0, columnspan=2, padx=5, pady=(10,5), sticky='ew') # Span 2 columns
         Tooltip(self.update_pid_btn, "Apply the current PID parameters (Setpoint, Kp, Ki, Kd).")
+
+        # Row 5: Save on setpoint checkbox
+        self.save_on_setpoint_var = tk.BooleanVar(value=False)
+        self.save_on_setpoint_chk = ttk.Checkbutton(pid_params_frame, text="Save all data when setpoint is reached", variable=self.save_on_setpoint_var, style='TCheckbutton')
+        self.save_on_setpoint_chk.grid(row=5, column=0, columnspan=2, sticky='w', padx=5, pady=5)
 
         # --- PID Input Source & Control Section ---
         pid_control_frame = ttk.LabelFrame(self, text="PID Input & Control", style='TLabelframe', padding=(5,5))
@@ -356,6 +363,7 @@ class ControlPanel(ttk.LabelFrame):
             self.set_status("PID is disabled. Cannot start.")
             return
         self.update_pid() # Ensure latest params are set before starting
+        self._reset_save_on_setpoint_flag()
         strategy = self.test_strategy_var.get()
         if strategy == 'Temperature Set Point':
             self.pid.resume()
@@ -380,6 +388,7 @@ class ControlPanel(ttk.LabelFrame):
         # Stop voltage step-up strategy if running
         if hasattr(self, '_vsu_running'):
             self._vsu_running = False
+        self._reset_save_on_setpoint_flag()
         try:
             if self.siggen.is_open:
                 self.siggen.set_voltage(0.0) # Ensure voltage is set to 0 on stop
@@ -582,6 +591,7 @@ class ControlPanel(ttk.LabelFrame):
         # Check if setpoint reached
         if temp is not None and temp >= self._vsu_target_temp:
             print(f"[VSU] Setpoint reached: {temp} >= {self._vsu_target_temp}")
+            self._trigger_save_all_data_if_requested()
             self.set_status(f"Setpoint reached ({temp:.2f}°C). Switching to PID control.")
             self._vsu_running = False
             self.pid.resume()
@@ -617,3 +627,24 @@ class ControlPanel(ttk.LabelFrame):
             self.vsu_params_frame.grid()
         else:
             self.vsu_params_frame.grid_remove()
+
+    def _trigger_save_all_data_if_requested(self):
+        if hasattr(self, 'save_on_setpoint_var') and self.save_on_setpoint_var.get() and not self._save_on_setpoint_triggered:
+            print("[PID] save_on_setpoint_var is True, attempting to save all data via app...")
+            app = self.master
+            while app is not None and not hasattr(app, '_save_all_data'):
+                app = getattr(app, 'master', None)
+            if app is not None and hasattr(app, '_save_all_data'):
+                app.after(0, app._save_all_data)
+                self._save_on_setpoint_triggered = True
+            else:
+                print("[PID] Could not find _save_all_data method on any parent.")
+
+    def _pid_setpoint_check(self, temp):
+        # Call this from standard PID mode when setpoint is reached
+        if temp is not None and temp >= self.setpoint_var.get():
+            print(f"[PID] Setpoint reached: {temp} >= {self.setpoint_var.get()}")
+            self._trigger_save_all_data_if_requested()
+
+    def _reset_save_on_setpoint_flag(self):
+        self._save_on_setpoint_triggered = False

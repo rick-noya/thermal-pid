@@ -449,6 +449,19 @@ class SenxorApp(ttk.Frame):
                 # Calculate PID output (must be called to update PID state)
                 voltage = self.pid() 
 
+                # --- Save-on-setpoint logic for standard PID mode ---
+                # Get current temperature using the same aggregation mode as PID input
+                agg_mode = getattr(self.control_panel, 'pid_agg_mode_var', None)
+                if agg_mode is not None:
+                    agg_mode = agg_mode.get()
+                if not agg_mode:
+                    agg_mode = 'overall_max'
+                temp = None
+                if hasattr(self, 'data_aggregator') and self.data_aggregator:
+                    temp = self.data_aggregator.get_frames_for_pid(aggregation_mode=agg_mode)
+                if hasattr(self, 'control_panel') and hasattr(self.control_panel, '_pid_setpoint_check'):
+                    self.control_panel._pid_setpoint_check(temp)
+
                 # Apply to signal generator if open and sufficient time has passed
                 if self.siggen and self.siggen.is_open:
                     # Optional: Check time elapsed since last update to avoid flooding siggen
@@ -520,14 +533,7 @@ class SenxorApp(ttk.Frame):
         for i, hv in enumerate(self.heatmap_views):
             port_name = hv.camera.connected_port or f"Camera{i+1}"
             try:
-                orig_sample = hv.sample_number_var.get()
-                hv.sample_number_var.set(f"{sample_name}_{port_name}" if sample_name else port_name)
-                # Patch: temporarily change working directory to folder_name
-                orig_cwd = os.getcwd()
-                os.chdir(folder_name)
                 hv.save_snapshot()
-                os.chdir(orig_cwd)
-                hv.sample_number_var.set(orig_sample)
                 num_saved += 1
             except Exception as e:
                 failed_ports.append(port_name)

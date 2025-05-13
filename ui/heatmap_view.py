@@ -371,3 +371,27 @@ class HeatmapView(ttk.Frame):
     #     self.rotation = (self.rotation + 90) % 360
     #     if self.last_frame is not None:
     #         self.render_frame(self.last_frame, size=self.last_size) 
+
+    def save_snapshot(self):
+        import os
+        import numpy as np
+        import cv2 as cv
+        from PIL import Image
+        # Save the current frame as both image and CSV
+        if self.last_frame is None:
+            raise RuntimeError("No frame to save.")
+        # Use sample number for filename
+        sample_name = self.get_sample_number() or "snapshot"
+        # Save CSV
+        csv_filename = f"{sample_name}.csv"
+        np.savetxt(csv_filename, self.last_frame, delimiter=",", fmt="%.2f")
+        # Save image
+        min_temp = np.min(self.last_frame)
+        max_temp = np.max(self.last_frame)
+        norm = ((self.last_frame - min_temp) / (max_temp - min_temp + 1e-6) * 255).astype(np.uint8)
+        cmap_name = self.colormap_var.get() if hasattr(self, 'colormap_var') and self.colormap_var else 'Viridis'
+        cmap_cv = COLORMAPS.get(cmap_name, cv.COLORMAP_VIRIDIS)
+        color_img = cv.applyColorMap(norm, cmap_cv)
+        img_pil = Image.fromarray(cv.cvtColor(color_img, cv.COLOR_BGR2RGB))
+        img_filename = f"{sample_name}.png"
+        img_pil.save(img_filename) 
