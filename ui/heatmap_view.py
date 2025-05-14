@@ -239,6 +239,60 @@ class HeatmapView(ttk.Frame):
         color_img = cv.applyColorMap(norm, cmap_cv)
         color_img = cv.resize(color_img, size, interpolation=cv.INTER_LINEAR) # INTER_LINEAR is faster
         
+        # ------------------------------------------------------------------
+        # Alignment overlay – draw corner markers for a centred rectangle
+        # sized 163 × 221 (original px) regardless of display scaling.
+        # We express the desired rectangle as a proportion of a reference
+        # frame that was 400×310 in the prototype image.  This way the
+        # overlay scales automatically with the live view.
+        # ------------------------------------------------------------------
+
+        try:
+            view_w, view_h = color_img.shape[1], color_img.shape[0]
+            # Proportions derived from 163 / 400 and 221 / 310
+            RECT_W_RATIO = 163 / 400
+            RECT_H_RATIO = 221 / 310
+
+            rect_w = int(view_w * RECT_W_RATIO)
+            rect_h = int(view_h * RECT_H_RATIO)
+
+            cx, cy = view_w // 2, view_h // 2
+            half_w, half_h = rect_w // 2, rect_h // 2
+
+            # Corner coordinates
+            corners = [
+                (cx - half_w, cy - half_h), # top-left
+                (cx + half_w, cy - half_h), # top-right
+                (cx - half_w, cy + half_h), # bottom-left
+                (cx + half_w, cy + half_h), # bottom-right
+            ]
+
+            # Length of the L lines (in display px)
+            L = max(10, min(rect_w, rect_h) // 8)
+            color = (0, 0, 255)  # Red in BGR
+            thickness = 2
+
+            # Draw L-shapes at each corner
+            # Top-left
+            x, y = corners[0]
+            cv.line(color_img, (x, y), (x + L, y), color, thickness)
+            cv.line(color_img, (x, y), (x, y + L), color, thickness)
+            # Top-right
+            x, y = corners[1]
+            cv.line(color_img, (x, y), (x - L, y), color, thickness)
+            cv.line(color_img, (x, y), (x, y + L), color, thickness)
+            # Bottom-left
+            x, y = corners[2]
+            cv.line(color_img, (x, y), (x + L, y), color, thickness)
+            cv.line(color_img, (x, y), (x, y - L), color, thickness)
+            # Bottom-right
+            x, y = corners[3]
+            cv.line(color_img, (x, y), (x - L, y), color, thickness)
+            cv.line(color_img, (x, y), (x, y - L), color, thickness)
+        except Exception as _exc:
+            # Fail silently; overlay is non-critical
+            pass
+
         show_hot = getattr(self, 'show_hot_spot_var', None)
         show_cold = getattr(self, 'show_cold_spot_var', None)
         show_hot = show_hot.get() if show_hot is not None else True
