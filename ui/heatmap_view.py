@@ -5,6 +5,7 @@ import numpy as np
 import cv2 as cv
 from collections import deque
 from .utils import Tooltip
+import config
 
 COLORMAPS = {
     'Jet': cv.COLORMAP_JET,
@@ -38,7 +39,7 @@ class HeatmapView(ttk.Frame):
         # self.last_overlay = None # Not used
         self.last_size = self.target_size
         self.after_id = None
-        self.update_interval = 100  # ms (10 FPS)
+        self.update_interval = config.HEATMAP_UPDATE_MS  # ms
         self.running = True
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)

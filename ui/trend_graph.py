@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo # Requires Python 3.9+
 import matplotlib.dates as mdates
 from .utils import Tooltip # Import the shared Tooltip
+import config
 # import os # os was imported but not used
 
 # Default font for matplotlib to match app style
@@ -82,7 +83,7 @@ class TrendGraph(ttk.Frame):
         # Time span selection
         ttk.Label(controls_frame, text="Time Window:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=(5,0))
         self.time_span_options = {"30 Seconds": 30, "1 Minute": 60, "5 Minutes": 300, "10 Minutes": 600, "All Data": -1}
-        self.time_span_var = tk.StringVar(value="1 Minute")
+        self.time_span_var = tk.StringVar(value=config.TREND_GRAPH_DEFAULT_SPAN)
         self.time_span_selector = ttk.Combobox(controls_frame, textvariable=self.time_span_var, 
                                                values=list(self.time_span_options.keys()), state="readonly", width=12)
         self.time_span_selector.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
@@ -117,7 +118,7 @@ class TrendGraph(ttk.Frame):
         self.voltage_data = [] # New list for voltage
         # self.start_time = time.time() # Removed, using absolute datetime objects
         self.current_time_span_seconds = self.time_span_options[self.time_span_var.get()]
-        self.update_interval = 500  # ms, graph updates less frequently than heatmap
+        self.update_interval = config.TREND_GRAPH_UPDATE_MS  # ms; configurable
 
         # Configure X-axis to display time formatted in PST
         self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S', tz=self.PST))

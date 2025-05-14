@@ -4,6 +4,7 @@ from .utils import Tooltip
 import sys
 import os
 import serial.tools.list_ports
+import config
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir) # This gets the root of the project if ui is a subdir
@@ -75,25 +76,25 @@ class ControlPanel(ttk.LabelFrame):
         self.vsu_params_frame = ttk.Frame(pid_params_frame, style='Content.TFrame')
         # Initial Voltage
         ttk.Label(self.vsu_params_frame, text="Initial Voltage (V):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=2)
-        self.vsu_initial_voltage_var = tk.DoubleVar(value=1.0)
+        self.vsu_initial_voltage_var = tk.DoubleVar(value=config.VSU_INITIAL_VOLTAGE)
         self.vsu_initial_voltage_spin = ttk.Spinbox(self.vsu_params_frame, from_=0, to=10, increment=0.1, textvariable=self.vsu_initial_voltage_var, width=7)
         self.vsu_initial_voltage_spin.grid(row=0, column=1, sticky='ew', padx=5, pady=2)
         Tooltip(self.vsu_initial_voltage_spin, "Starting voltage for the step-up test.")
         # Step Size
         ttk.Label(self.vsu_params_frame, text="Step Size (V):", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=2)
-        self.vsu_step_size_var = tk.DoubleVar(value=1.0)
+        self.vsu_step_size_var = tk.DoubleVar(value=config.VSU_STEP_SIZE)
         self.vsu_step_size_spin = ttk.Spinbox(self.vsu_params_frame, from_=0.1, to=5, increment=0.1, textvariable=self.vsu_step_size_var, width=7)
         self.vsu_step_size_spin.grid(row=1, column=1, sticky='ew', padx=5, pady=2)
         Tooltip(self.vsu_step_size_spin, "Voltage increment for each step.")
         # Stabilization Window
         ttk.Label(self.vsu_params_frame, text="Stabilization Window (s):", style='Content.TLabel').grid(row=2, column=0, sticky='w', padx=5, pady=2)
-        self.vsu_stab_window_var = tk.DoubleVar(value=10.0)
+        self.vsu_stab_window_var = tk.DoubleVar(value=config.VSU_STAB_WINDOW)
         self.vsu_stab_window_spin = ttk.Spinbox(self.vsu_params_frame, from_=1, to=60, increment=0.5, textvariable=self.vsu_stab_window_var, width=7)
         self.vsu_stab_window_spin.grid(row=2, column=1, sticky='ew', padx=5, pady=2)
         Tooltip(self.vsu_stab_window_spin, "How many seconds of stable temperature are required before stepping up.")
         # Stabilization Threshold
         ttk.Label(self.vsu_params_frame, text="Stabilization Threshold (°C):", style='Content.TLabel').grid(row=3, column=0, sticky='w', padx=5, pady=2)
-        self.vsu_stab_thresh_var = tk.DoubleVar(value=3.0)
+        self.vsu_stab_thresh_var = tk.DoubleVar(value=config.VSU_STAB_THRESHOLD)
         self.vsu_stab_thresh_spin = ttk.Spinbox(self.vsu_params_frame, from_=0.01, to=2, increment=0.01, textvariable=self.vsu_stab_thresh_var, width=7)
         self.vsu_stab_thresh_spin.grid(row=3, column=1, sticky='ew', padx=5, pady=2)
         Tooltip(self.vsu_stab_thresh_spin, "Max allowed temperature fluctuation (°C) to consider stable.")
@@ -214,7 +215,7 @@ class ControlPanel(ttk.LabelFrame):
         self.sg_settings_frame.columnconfigure(tuple(range(3)), weight=1, uniform="sg_settings_reduced")
 
         ttk.Label(self.sg_settings_frame, text="Frequency (Hz):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        self.sg_freq_var = tk.DoubleVar(value=100000.0)
+        self.sg_freq_var = tk.DoubleVar(value=config.SG_DEFAULT_FREQ)
         self.freq_spin = ttk.Spinbox(self.sg_settings_frame, from_=0, to=1000000, increment=100, textvariable=self.sg_freq_var, width=10)
         self.freq_spin.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
         Tooltip(self.freq_spin, "Set the output frequency in Hz.")
@@ -223,7 +224,7 @@ class ControlPanel(ttk.LabelFrame):
         Tooltip(self.set_freq_btn, "Apply the frequency to the signal generator.")
 
         ttk.Label(self.sg_settings_frame, text="Voltage (V):", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        self.sg_voltage_var = tk.DoubleVar(value=1.0)
+        self.sg_voltage_var = tk.DoubleVar(value=config.SG_DEFAULT_VOLTAGE)
         self.volt_spin = ttk.Spinbox(self.sg_settings_frame, from_=0, to=10, increment=0.01, textvariable=self.sg_voltage_var, width=8)
         self.volt_spin.grid(row=1, column=1, sticky='ew', padx=5, pady=5)
         Tooltip(self.volt_spin, "Set the output voltage in volts.")
@@ -548,7 +549,7 @@ class ControlPanel(ttk.LabelFrame):
         self._vsu_max_voltage = self.max_voltage_var.get() if self.max_voltage_var else 5.0
         self._vsu_temp_buffer = []
         # Calculate buffer size from stabilization window and interval
-        self._vsu_interval_ms = 100  # ms
+        self._vsu_interval_ms = config.VSU_INTERVAL_MS  # ms
         stab_window_s = self.vsu_stab_window_var.get()
         self._vsu_buffer_size = max(2, int(stab_window_s * 1000 // self._vsu_interval_ms))
         self._vsu_stable_threshold = self.vsu_stab_thresh_var.get()

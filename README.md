@@ -23,6 +23,64 @@ A modern, modular, and responsive Python GUI for controlling a Senxor/MI48 therm
    python main.py
    ```
 
+## Configuration
+
+The application now looks for a YAML file at `config.yaml` (repo root) **or** a
+custom path specified via the `CONFIG_FILE` environment variable. Values that
+are absent fall back to sensible defaults hard-coded in the program. Example
+layout:
+
+```yaml
+camera:
+  stream_fps: 15
+  default_port: "COM9"
+
+signal_generator:
+  port: "COM8"
+  baud: 115200
+  timeout: 1.0
+  default_frequency: 100000
+  default_voltage: 1.0
+
+pid:
+  kp: 1.0
+  ki: 0.1
+  kd: 0.05
+  setpoint: 60.0
+  v_limits: [0.0, 5.0]
+  sample_time: 0.1
+
+ui:
+  heatmap:
+    update_ms: 100
+  trend_graph:
+    update_ms: 500
+    default_time_span: "1 Minute"
+  smoothing:
+    hot_len: 30
+    cold_len: 30
+  max_voltage: 5.0
+  default_colormap: "Viridis"
+
+tests:
+  vsu:
+    initial_voltage: 1.0
+    step_size: 1.0
+    stabilization_window: 10.0
+    stabilization_threshold: 3.0
+    interval_ms: 100
+```
+
+To try different settings without touching source code:
+
+```bash
+export CONFIG_FILE=/path/to/my_config.yaml
+python main.py
+```
+
+The in-memory configuration can also be refreshed at runtime from within the
+Python REPL by calling `config.reload()`.
+
 ## Usage
 
 - Adjust PID and signal generator settings in the left panel

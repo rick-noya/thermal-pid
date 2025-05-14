@@ -1,5 +1,6 @@
 import serial
 from typing import Optional
+from config import DEFAULT_PORT_SIGGEN, SIGGEN_BAUD, SIGGEN_TIMEOUT
 
 
 def _make_cmd(command: str) -> bytes:
@@ -16,10 +17,17 @@ class SignalGenerator:
     `set_voltage`.
     """
 
-    def __init__(self, port: str = "COM8", baud: int = 115200, timeout: float = 1.0):
-        self._port = port
-        self._baud = baud
-        self._timeout = timeout
+    def __init__(self, port: str | None = None, baud: int | None = None, timeout: float | None = None):
+        """Create the wrapper.
+
+        Parameters may be ``None``; when they are, the application-level
+        defaults from :pyfile:`config.py` are applied.  This design lets the
+        defaults be overridden by YAML without changing call sites.
+        """
+
+        self._port = port or DEFAULT_PORT_SIGGEN
+        self._baud = baud or SIGGEN_BAUD
+        self._timeout = timeout or SIGGEN_TIMEOUT
         self._serial: Optional[serial.Serial] = None
 
     # ------------------------------------------------------------------

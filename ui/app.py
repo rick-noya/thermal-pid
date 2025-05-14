@@ -28,6 +28,7 @@ from devices.data_aggregator import DataAggregator # Added for type hinting if n
 import time # Added for PID output update timestamp
 import math
 import numpy as np
+import config
 
 
 class SenxorApp(ttk.Frame):
@@ -110,14 +111,14 @@ class SenxorApp(ttk.Frame):
 
         # --- Shared Camera View Settings Variables ---
         # Initialize these variables here to be used by both the settings panel and heatmap views
-        self.hot_smooth_len_var = tk.IntVar(value=30)  # Default to 30
-        self.cold_smooth_len_var = tk.IntVar(value=30) # Default to 30
+        self.hot_smooth_len_var = tk.IntVar(value=config.HOT_SMOOTH_LEN_DEFAULT)
+        self.cold_smooth_len_var = tk.IntVar(value=config.COLD_SMOOTH_LEN_DEFAULT)
         self.sample_number_var = tk.StringVar()
-        self.colormap_var = tk.StringVar(value='Viridis')
+        self.colormap_var = tk.StringVar(value=config.DEFAULT_COLORMAP)
         self.show_hot_spot_var = tk.BooleanVar(value=True)
         self.show_cold_spot_var = tk.BooleanVar(value=False)
         # Global Max Voltage
-        self.max_voltage_var = tk.DoubleVar(value=5.0)
+        self.max_voltage_var = tk.DoubleVar(value=config.MAX_VOLTAGE_DEFAULT)
 
         # Trace smoothing changes to update heatmap views
         def _propagate_smoothing(*args):
@@ -263,7 +264,7 @@ class SenxorApp(ttk.Frame):
         self.show_cold_spot_var.trace_add('write', _propagate_overlay)
 
         # --- Trend Graph Aggregation Update ---
-        self.trend_graph_update_interval = 500  # ms
+        self.trend_graph_update_interval = config.TREND_GRAPH_UPDATE_MS  # ms
         self.after(self.trend_graph_update_interval, self._update_trend_graph_aggregation)
 
     def _on_canvas_configure(self, event):
