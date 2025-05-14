@@ -4,6 +4,7 @@ import serial.tools.list_ports
 from senxor.interfaces import MI_VID, MI_PIDs
 import threading
 import time
+import numpy as np
 
 
 class SenxorCamera:
@@ -111,7 +112,7 @@ class SenxorCamera:
                 
                 current_frame = None
                 if raw_data is not None:
-                    current_frame = data_to_frame(raw_data, (80, 62), hflip=False)
+                    current_frame = np.rot90(data_to_frame(raw_data, (80, 62), hflip=False))
 
                 with self.frame_lock:
                     self.latest_frame_data = (current_frame, header)
@@ -161,7 +162,7 @@ class SenxorCamera:
             data, header = self.mi48.read() # direct hardware read
             if data is None:
                 return None, header
-            frame = data_to_frame(data, (80, 62), hflip=False)
+            frame = np.rot90(data_to_frame(data, (80, 62), hflip=False))
             return frame, header
 
     def read_raw(self):
