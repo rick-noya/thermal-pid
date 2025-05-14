@@ -6,6 +6,7 @@ from .heatmap_view import HeatmapView
 from .trend_graph import TrendGraph
 from .utils import Tooltip
 from .status_bar_view import StatusBarView
+from .roi_stitch_dialog import ROIStitchDialog
 # Assuming CameraManager can be imported (it's in devices/)
 # If app.py is in ui/, and devices/ is a sibling to ui/, then:
 # import sys
@@ -267,6 +268,8 @@ class SenxorApp(ttk.Frame):
         self.trend_graph_update_interval = config.TREND_GRAPH_UPDATE_MS  # ms
         self.after(self.trend_graph_update_interval, self._update_trend_graph_aggregation)
 
+        self.roi_store = {}  # Store ROI data per camera
+
     def _on_canvas_configure(self, event):
         """Dynamically set the width of the inner frame to match the canvas width."""
         canvas_width = event.width
@@ -500,11 +503,18 @@ class SenxorApp(ttk.Frame):
         # Configure layout - Make the snapshot button align to the right
         controls_frame.columnconfigure(0, weight=1) # Empty space pushes button right
         controls_frame.columnconfigure(1, weight=0) # Button takes needed space
+        controls_frame.columnconfigure(2, weight=0) # Button takes needed space
+        controls_frame.columnconfigure(3, weight=0) # Button takes needed space
 
         # Save All Data button
         save_all_btn = ttk.Button(controls_frame, text="Save All Data", command=self._save_all_data, style='Primary.TButton')
         save_all_btn.grid(row=0, column=2, padx=5, pady=2, sticky='e')
         Tooltip(save_all_btn, "Save trend graph data and all camera data to a dated folder.")
+
+        # Add Stitch/ROI button
+        stitch_roi_btn = ttk.Button(controls_frame, text="Stitch/ROI", command=self.open_roi_stitch_modal, style='TButton')
+        stitch_roi_btn.grid(row=0, column=3, padx=5, pady=2, sticky='e')
+        Tooltip(stitch_roi_btn, "Open the ROI selection and image stitching tool.")
 
     def _save_all_data(self):
         import os
@@ -679,3 +689,11 @@ class SenxorApp(ttk.Frame):
         except Exception as e:
             print(f"Error setting signal generator to 0V on close: {e}")
         self.master.destroy() 
+
+    def open_roi_stitch_modal(self):
+        # Open the ROI selection modal dialog
+        def on_save(roi_store):
+            # TODO: Save to disk or propagate as needed
+            self.roi_store = roi_store
+            self.set_status("ROI(s) saved.")
+        ROIStitchDialog(self.master, self.heatmap_views, roi_store=self.roi_store, on_save=on_save) 
