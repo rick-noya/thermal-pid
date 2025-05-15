@@ -29,6 +29,8 @@ import time # Added for PID output update timestamp
 import math
 import numpy as np
 import config
+from datetime import datetime
+from ui.crash_reporter import crash_reporter
 
 
 class SenxorApp(ttk.Frame):
@@ -119,6 +121,13 @@ class SenxorApp(ttk.Frame):
         self.show_cold_spot_var = tk.BooleanVar(value=False)
         # Global Max Voltage
         self.max_voltage_var = tk.DoubleVar(value=config.MAX_VOLTAGE_DEFAULT)
+
+        # --- Add initial app state to crash reporter ---
+        self._capture_app_state()
+        
+        # Set up periodic state capture for the crash reporter
+        self.state_capture_interval_ms = 5000  # Capture state every 5 seconds
+        self.after(self.state_capture_interval_ms, self._periodic_state_capture)
 
         # Trace smoothing changes to update heatmap views
         def _propagate_smoothing(*args):
@@ -672,10 +681,96 @@ class SenxorApp(ttk.Frame):
         self.trend_graph.add_point(agg_max, agg_min, agg_avg, voltage)
         self.after(self.trend_graph_update_interval, self._update_trend_graph_aggregation) 
 
-    def _on_app_close(self):
+    def _capture_app_state(self):
+        """Capture the current application state for the crash reporter"""
         try:
-            if hasattr(self, 'siggen') and self.siggen and getattr(self.siggen, 'is_open', False):
-                self.siggen.set_voltage(0.0)
+            # Capture PID controller state
+            pid_state = {
+                "setpoint": getattr(self.pid, "setpoint", "N/A"),
+                "last_input": getattr(self.pid, "_last_valid_input", "N/A"),
+                "last_output": getattr(self.pid, "_last_output", "N/A"),
+                "enabled": not getattr(self.pid, "paused", True),
+                "kp": getattr(self.pid, "Kp", "N/A"),
+                "ki": getattr(self.pid, "Ki", "N/A"),
+                "kd": getattr(self.pid, "Kd", "N/A"),
+                "pid_camera_indices": getattr(self.pid, "pid_camera_indices", "N/A"),
+                "pid_aggregation_mode": getattr(self.pid, "pid_aggregation_mode", "N/A")
+            }
+            
+            # Capture signal generator state
+            siggen_state = {
+                "is_open": getattr(self.siggen, "is_open", False),
+                "port": getattr(self.siggen, "port", "N/A"),
+                "current_voltage": getattr(self.siggen, "_last_voltage", "N/A"),
+                "current_frequency": getattr(self.siggen, "_last_frequency", "N/A")
+            }
+            
+            # Capture camera information
+            cam_info = []
+            if hasattr(self, "camera_manager") and self.camera_manager:
+                for i, cam in enumerate(self.camera_manager.get_all_cameras()):
+                    cam_info.append({
+                        "index": i,
+                        "port": getattr(cam, "connected_port", "N/A"),
+                        "connected": getattr(cam, "connected", False),
+                        "last_temp": getattr(cam, "last_max_temp", "N/A") if hasattr(cam, "last_max_temp") else "N/A"
+                    })
+            
+            # Capture UI state
+            ui_state = {
+                "colormap": self.colormap_var.get(),
+                "max_voltage": self.max_voltage_var.get(),
+                "hot_smooth_len": self.hot_smooth_len_var.get(),
+                "cold_smooth_len": self.cold_smooth_len_var.get(),
+                "settings_panel_visible": getattr(self, "settings_panel_visible", False),
+                "n_heatmap_views": len(getattr(self, "heatmap_views", []))
+            }
+            
+            # Update the crash reporter with all state info
+            crash_reporter.capture_app_state(
+                pid_controller=pid_state,
+                signal_generator=siggen_state,
+                cameras=cam_info,
+                ui=ui_state,
+                timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
         except Exception as e:
-            print(f"Error setting signal generator to 0V on close: {e}")
-        self.master.destroy() 
+            # Don't let state capture failures crash the app
+            print(f"Error capturing application state: {e}")
+    
+    def _periodic_state_capture(self):
+        """Periodically capture the application state for crash reporting"""
+        try:
+            self._capture_app_state()
+        finally:
+            # Always schedule the next capture, even if this one failed
+            self.after(self.state_capture_interval_ms, self._periodic_state_capture)
+
+    def _on_app_close(self):
+        """Handle application shutdown gracefully"""
+        try:
+            # Attempt to stop any PID control and set voltage to 0
+            if hasattr(self, 'pid') and self.pid:
+                try:
+                    self.pid.pause()
+                except Exception as e:
+                    print(f"Error stopping PID controller: {e}")
+            
+            if hasattr(self, 'siggen') and self.siggen and getattr(self.siggen, 'is_open', False):
+                try:
+                    self.siggen.set_voltage(0.0)
+                    self.siggen.close()
+                except Exception as e:
+                    print(f"Error stopping signal generator: {e}")
+            
+            # Capture final state before exit
+            self._capture_app_state()
+        except Exception:
+            # If there's an error in shutdown, log it but continue closing
+            import traceback
+            print(f"Error during application shutdown: {traceback.format_exc()}")
+        finally:
+            # Destroy the window
+            self.master.destroy()
+        
+    # Ensure that other methods from the original class are preserved... 

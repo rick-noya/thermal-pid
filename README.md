@@ -107,6 +107,50 @@ devices/               # Hardware wrappers
 senxor/                # Vendor/device libraries
 ```
 
+## Crash Reporting System
+
+The application includes a robust crash reporting system that helps diagnose and troubleshoot issues:
+
+### Features
+
+- Detailed crash reports with system information, stack traces, and application state
+- Automatic screenshot capture (when PIL is available)
+- Periodic state capture to provide context for crashes
+- Custom context handlers for specific operations
+
+### Crash Report Contents
+
+Crash reports are saved to the `logs/` directory and include:
+
+- Basic system information (OS, Python version)
+- Exception details and stack trace
+- Application state at time of crash (PID settings, camera status, etc.)
+- Screenshots of the application (when available)
+- Recent log entries
+
+### For Developers
+
+The crash reporting system can be used in your code:
+
+```python
+from ui.crash_reporter import crash_reporter
+
+# Capture additional state information
+crash_reporter.capture_app_state(
+    custom_data="value",
+    important_info=123
+)
+
+# Use context manager for error-prone operations
+with crash_reporter.error_context({"operation": "saving_file"}):
+    # Code that might raise an exception
+    perform_risky_operation()
+```
+
+### Logs Location
+
+Logs and crash reports are stored in the `logs/` directory in the application root folder.
+
 ## Requirements
 
 See `requirements.txt` for all dependencies.
