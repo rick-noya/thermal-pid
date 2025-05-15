@@ -345,6 +345,64 @@ class HeatmapView(ttk.Frame):
                     cv.circle(color_img, cool_pos, 8, (255,0,0), 2)
 
         img_rgb = cv.cvtColor(color_img, cv.COLOR_BGR2RGB)
+        
+        # Calculate high, low, and delta values within the red box
+        try:
+            # Get the coordinates of the red box corners
+            view_w, view_h = color_img.shape[1], color_img.shape[0]
+            RECT_W_RATIO = 163 / 400
+            RECT_H_RATIO = 221 / 310
+
+            rect_w = int(view_w * RECT_W_RATIO)
+            rect_h = int(view_h * RECT_H_RATIO)
+
+            cx, cy = view_w // 2, view_h // 2
+            half_w, half_h = rect_w // 2, rect_h // 2
+            
+            # Calculate region of interest (ROI) in original frame coordinates
+            roi_x1 = max(0, int((cx - half_w) / scale_x))
+            roi_y1 = max(0, int((cy - half_h) / scale_y))
+            roi_x2 = min(frame.shape[1], int((cx + half_w) / scale_x))
+            roi_y2 = min(frame.shape[0], int((cy + half_h) / scale_y))
+            
+            # Extract the ROI from the thermal data
+            roi = frame[roi_y1:roi_y2, roi_x1:roi_x2]
+            
+            if roi.size > 0:  # Ensure ROI is not empty
+                roi_min = np.min(roi)
+                roi_max = np.max(roi)
+                roi_delta = roi_max - roi_min
+                
+                # Add summary text below the heatmap
+                summary_text = f"Box: Low: {roi_min:.1f}°C | High: {roi_max:.1f}°C | Δ: {roi_delta:.1f}°C"
+                
+                # Draw a semi-transparent background for the text
+                bg_padding = 5
+                font_face = cv.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.5
+                thickness = 1
+                (text_w, text_h), _ = cv.getTextSize(summary_text, font_face, font_scale, thickness)
+                text_y = view_h - 10
+                
+                # Create a copy with the summary overlay
+                overlay = color_img.copy()
+                cv.rectangle(overlay, 
+                            (view_w//2 - text_w//2 - bg_padding, text_y - text_h - bg_padding),
+                            (view_w//2 + text_w//2 + bg_padding, text_y + bg_padding),
+                            (0, 0, 0), -1)
+                cv.addWeighted(overlay, 0.7, color_img, 0.3, 0, color_img)
+                
+                # Draw the text
+                cv.putText(color_img, summary_text, 
+                          (view_w//2 - text_w//2, text_y), 
+                          font_face, font_scale, (255, 255, 255), thickness, cv.LINE_AA)
+                
+                # Convert back to RGB for display
+                img_rgb = cv.cvtColor(color_img, cv.COLOR_BGR2RGB)
+        except Exception as e:
+            # If there's an error, continue without the summary
+            print(f"Error calculating ROI temperature: {e}")
+        
         img_pil = Image.fromarray(img_rgb)
         img_tk = ImageTk.PhotoImage(img_pil)
         self.img_label.imgtk = img_tk
