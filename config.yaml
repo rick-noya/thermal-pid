@@ -1,0 +1,48 @@
+camera:
+  stream_fps: 15
+  default_port: "COM9"
+
+signal_generator:
+  port: "COM8"
+  baud: 115200
+  timeout: 1.0
+  default_frequency: 100000 # Hz
+  default_voltage: 1.0 # V
+
+pid:
+  kp: 1.0
+  ki: 0.1
+  kd: 0.05
+  setpoint: 60.0
+  v_limits: [0.0, 5.0]
+  sample_time: 0.1
+
+ui:
+  heatmap:
+    update_ms: 100 # Refresh rate for each camera heatmap
+  trend_graph:
+    update_ms: 500 # How often the aggregated trend graph redraws
+    default_time_span: "1 Minute" # Initial window selection in the combobox
+  smoothing:
+    hot_len: 60
+    cold_len: 60
+  max_voltage: 5.0
+  # Available colormaps:
+  # default_colormap: "Jet"
+  # default_colormap: "Hot"
+  # default_colormap: "Magma"
+  # default_colormap: "Inferno"
+  # default_colormap: "Plasma"
+  # default_colormap: "Viridis"
+  # default_colormap: "Cividis"
+  # default_colormap: "Twilight"
+  # default_colormap: "Turbo"
+  default_colormap: "Viridis"
+
+tests:
+  vsu:
+    initial_voltage: 1.0
+    step_size: 1.0
+    stabilization_window: 10.0 # seconds
+    stabilization_threshold: 3.0 # °C
+    interval_ms: 100

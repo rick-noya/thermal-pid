@@ -5,4 +5,5 @@ matplotlib
 tk
 pyserial
 pyvisa
-simple-pid 
+simple-pid
+pyyaml>=6.0 

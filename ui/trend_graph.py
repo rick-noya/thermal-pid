@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo # Requires Python 3.9+
 import matplotlib.dates as mdates
 from .utils import Tooltip # Import the shared Tooltip
+import config
 # import os # os was imported but not used
 
 # Default font for matplotlib to match app style
@@ -82,7 +83,7 @@ class TrendGraph(ttk.Frame):
         # Time span selection
         ttk.Label(controls_frame, text="Time Window:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=(5,0))
         self.time_span_options = {"30 Seconds": 30, "1 Minute": 60, "5 Minutes": 300, "10 Minutes": 600, "All Data": -1}
-        self.time_span_var = tk.StringVar(value="1 Minute")
+        self.time_span_var = tk.StringVar(value=config.TREND_GRAPH_DEFAULT_SPAN)
         self.time_span_selector = ttk.Combobox(controls_frame, textvariable=self.time_span_var, 
                                                values=list(self.time_span_options.keys()), state="readonly", width=12)
         self.time_span_selector.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
@@ -117,7 +118,7 @@ class TrendGraph(ttk.Frame):
         self.voltage_data = [] # New list for voltage
         # self.start_time = time.time() # Removed, using absolute datetime objects
         self.current_time_span_seconds = self.time_span_options[self.time_span_var.get()]
-        self.update_interval = 500  # ms, graph updates less frequently than heatmap
+        self.update_interval = config.TREND_GRAPH_UPDATE_MS  # ms; configurable
 
         # Configure X-axis to display time formatted in PST
         self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S', tz=self.PST))
@@ -212,7 +213,7 @@ class TrendGraph(ttk.Frame):
         self.update_graph() # Redraw empty graph, which will now set axes based on current time
         self.set_status("Trend graph data cleared.")
 
-    def export_csv(self, sample_name: str | None = None):
+    def export_csv(self, sample_name: str | None = None, output_path: str | None = None):
         if not self.time_data:
             self.set_status("No data to export.")
             return
@@ -225,15 +226,21 @@ class TrendGraph(ttk.Frame):
         else:
             filename = f"trend_{timestamp}.csv"
 
+        # If output_path is provided, use it; otherwise, use filename in cwd
+        if output_path:
+            csv_path = output_path
+        else:
+            csv_path = filename
+
         try:
-            with open(filename, 'w', newline='') as f:
+            with open(csv_path, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(['Timestamp (PST)', 'Max Temp (C)', 'Min Temp (C)', 'Avg Temp (C)', 'Voltage (V)']) # Updated header
                 for dt_obj, mx, mn, av, v in zip(self.time_data, self.max_data, self.min_data, self.avg_data, self.voltage_data):
                     # Format datetime object to string including PST
                     timestamp_str = dt_obj.strftime('%Y-%m-%d %H:%M:%S %Z')
                     writer.writerow([timestamp_str, mx, mn, av, v]) # Write formatted timestamp
-            self.set_status(f"Graph data exported to {filename}")
+            self.set_status(f"Graph data exported to {csv_path}")
         except Exception as e:
             self.set_status(f"Export failed: {e}")
 
