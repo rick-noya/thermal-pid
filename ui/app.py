@@ -379,9 +379,9 @@ class SenxorApp(ttk.Frame):
             if serial_number:
                 friendly_name = getattr(config, 'CAMERA_NAME_MAP', {}).get(serial_number, None)
             if serial_number and friendly_name:
-                label_text = f"{friendly_name} ({port_name}): {serial_number}"
+                label_text = f"{friendly_name} ({port_name})"
             elif serial_number:
-                label_text = f"{port_name}: {serial_number}"
+                label_text = f"{port_name}"
             else:
                 label_text = port_name
             title_lbl = ttk.Label(
