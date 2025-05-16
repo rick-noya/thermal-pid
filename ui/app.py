@@ -31,6 +31,117 @@ import numpy as np
 import config
 
 
+class SettingsDialog(tk.Toplevel):
+    def __init__(self, master, app_instance, style_engine):
+        super().__init__(master)
+        self.app = app_instance
+        self.transient(master)
+        self.grab_set()
+
+        self.title("Display Settings")
+        # Set a more appropriate default size
+        self.geometry("450x480") # Increased height
+
+        dialog_frame = ttk.Frame(self, style='Content.TFrame', padding=(10,10))
+        dialog_frame.pack(expand=True, fill='both')
+
+        settings_content_frame = ttk.LabelFrame(dialog_frame, text="Display Options", style='TLabelframe', padding=(10,10))
+        settings_content_frame.pack(expand=True, fill='both', padx=5, pady=5)
+
+        settings_content_frame.columnconfigure(1, weight=1) # Controls column expands
+
+        # --- Get config values with fallbacks ---
+        SMOOTH_MIN = getattr(config, 'SMOOTH_LEN_MIN', 1)
+        SMOOTH_MAX = getattr(config, 'SMOOTH_LEN_MAX', 30)
+        VOLTAGE_MAX_LIMIT = getattr(config, 'MAX_VOLTAGE_UPPER_LIMIT', 20.0)
+        # MAX_VOLTAGE_DEFAULT is used for the variable's init in SenxorApp, and for tooltip text here.
+        max_voltage_default_tooltip = getattr(config, 'MAX_VOLTAGE_DEFAULT', 5.0)
+
+        # Colormap selector
+        ttk.Label(settings_content_frame, text='Colormap:', style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        # Make sure self.app.colormap_var is used correctly from the app instance
+        cmap_options = ['Jet','Hot','Magma','Inferno','Plasma','Viridis','Cividis','Twilight','Turbo']
+        # Ensure the current value is in the list, or set to the first option as a fallback
+        current_cmap = self.app.colormap_var.get()
+        if current_cmap not in cmap_options:
+            self.app.colormap_var.set(cmap_options[0])
+
+        cmap_menu = ttk.OptionMenu(settings_content_frame, self.app.colormap_var, self.app.colormap_var.get(), *cmap_options)
+        cmap_menu.grid(row=0, column=1, sticky='ew', padx=5, pady=5, columnspan=2) # Span to fill width
+        Tooltip(cmap_menu, "Select the color palette for the thermal display.")
+
+        # Sample Number
+        ttk.Label(settings_content_frame, text='Sample #:', style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        sample_entry = ttk.Entry(settings_content_frame, textvariable=self.app.sample_number_var, width=20) # Increased width slightly
+        sample_entry.grid(row=1, column=1, sticky='ew', padx=5, pady=5, columnspan=2)
+        Tooltip(sample_entry, "Identifier for the current sample/test run (used in snapshot filenames).")
+
+        # Smoothing sliders - Hot
+        ttk.Label(settings_content_frame, text='Hot Spot Smooth (frames):', style='Content.TLabel').grid(row=2, column=0, sticky='w', padx=5, pady=5)
+        hot_slider = ttk.Scale(settings_content_frame, from_=SMOOTH_MIN, to=SMOOTH_MAX, variable=self.app.hot_smooth_len_var, orient='horizontal', length=150)
+        hot_slider.grid(row=2, column=1, sticky='ew', padx=5, pady=5)
+        ttk.Label(settings_content_frame, textvariable=self.app.hot_smooth_len_var, style='Content.TLabel', width=3).grid(row=2, column=2, sticky='w', padx=(0, 5))
+        Tooltip(hot_slider, f"Number of frames to average for the hot spot marker position ({SMOOTH_MIN}-{SMOOTH_MAX}).")
+
+        # Smoothing sliders - Cold
+        ttk.Label(settings_content_frame, text='Cold Spot Smooth (frames):', style='Content.TLabel').grid(row=3, column=0, sticky='w', padx=5, pady=5)
+        cold_slider = ttk.Scale(settings_content_frame, from_=SMOOTH_MIN, to=SMOOTH_MAX, variable=self.app.cold_smooth_len_var, orient='horizontal', length=150)
+        cold_slider.grid(row=3, column=1, sticky='ew', padx=5, pady=5)
+        ttk.Label(settings_content_frame, textvariable=self.app.cold_smooth_len_var, style='Content.TLabel', width=3).grid(row=3, column=2, sticky='w', padx=(0, 5))
+        Tooltip(cold_slider, f"Number of frames to average for the cold spot marker position ({SMOOTH_MIN}-{SMOOTH_MAX}).")
+
+        # Hot/Cold Spot Overlay Checkboxes
+        hot_chk = ttk.Checkbutton(settings_content_frame, text='Show Hot Spot Overlay', variable=self.app.show_hot_spot_var, style='TCheckbutton')
+        hot_chk.grid(row=4, column=0, columnspan=3, sticky='w', padx=5, pady=(10,2))
+        Tooltip(hot_chk, "Toggle the display of the hot spot marker on the heatmap.")
+        cold_chk = ttk.Checkbutton(settings_content_frame, text='Show Cold Spot Overlay', variable=self.app.show_cold_spot_var, style='TCheckbutton')
+        cold_chk.grid(row=5, column=0, columnspan=3, sticky='w', padx=5, pady=(2,10))
+        Tooltip(cold_chk, "Toggle the display of the cold spot marker on the heatmap.")
+
+        # Max Voltage (global)
+        ttk.Label(settings_content_frame, text='Max Voltage (V):', style='Content.TLabel').grid(row=6, column=0, sticky='w', padx=5, pady=5)
+        max_voltage_spin = ttk.Spinbox(settings_content_frame, from_=0.0, to=VOLTAGE_MAX_LIMIT, increment=0.1, textvariable=self.app.max_voltage_var, width=10)
+        max_voltage_spin.grid(row=6, column=1, sticky='ew', padx=5, pady=5, columnspan=2)
+        Tooltip(max_voltage_spin, f"Global maximum voltage for operations (default {max_voltage_default_tooltip}V, max {VOLTAGE_MAX_LIMIT}V).")
+        
+        # --- Dialog Buttons ---
+        button_frame = ttk.Frame(dialog_frame, style='Content.TFrame')
+        button_frame.pack(fill='x', pady=(15,5), padx=5, side='bottom') # Pack at bottom
+
+        # Configure button_frame columns to push buttons to the right
+        button_frame.columnconfigure(0, weight=1) # Empty space
+
+        ok_button = ttk.Button(button_frame, text="OK", command=self.destroy, style='Primary.TButton', width=10)
+        ok_button.grid(row=0, column=1, padx=(5,0), pady=5, sticky='e')
+
+        cancel_button = ttk.Button(button_frame, text="Cancel", command=self.destroy, style='TButton', width=10)
+        cancel_button.grid(row=0, column=2, padx=(5,0), pady=5, sticky='e')
+        
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.update_idletasks()
+        master_x = master.winfo_x()
+        master_y = master.winfo_y()
+        master_width = master.winfo_width()
+        master_height = master.winfo_height()
+        # Ensure dialog width/height are read *after* content is packed and updated
+        dialog_width = self.winfo_width()
+        dialog_height = self.winfo_height()
+        # If dialog_width/height are still 1 (common if not fully rendered), use requested size
+        if dialog_width <= 1 or dialog_height <= 1:
+            try:
+                geom = self.geometry().split('x') # e.g. "450x480+10+10"
+                dialog_width = int(geom[0])
+                dialog_height = int(geom[1].split('+')[0])
+            except: # Fallback if parsing geometry fails
+                dialog_width = 450 
+                dialog_height = 480
+
+        x = master_x + (master_width - dialog_width) // 2
+        y = master_y + (master_height - dialog_height) // 2
+        self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}") # Set size and position
+        ok_button.focus_set()
+
+
 class SenxorApp(ttk.Frame):
     def __init__(self, master, camera_manager: CameraManager, siggen, pid):
         super().__init__(master)
@@ -170,13 +281,9 @@ class SenxorApp(ttk.Frame):
         self.status_bar_view.grid(row=0, column=0, sticky='ew')
         status_update_method = self.status_bar_view.set_status
 
-        self.settings_btn = ttk.Button(status_settings_frame, text='⚙ Settings', command=self._toggle_settings_panel, style='TButton')
-        self.settings_btn.grid(row=0, column=1, sticky='e', padx=(10,0))
-        Tooltip(self.settings_btn, "Show/Hide Display Settings Panel")
-
         # --- Row 1: Settings Panel (Hidden by default) ---
-        self.settings_panel_visible = False
-        self._create_settings_panel(style) # Will place itself in row 1
+        # self.settings_panel_visible = False # No longer needed
+        # self._create_settings_panel(style) # This is now handled by SettingsDialog
 
         # --- Row 2: PanedWindow (Controls + Cameras) ---
         self.top_paned = ttk.PanedWindow(self.scrollable_inner_frame, orient='horizontal')
@@ -246,13 +353,13 @@ class SenxorApp(ttk.Frame):
         # Bind canvas width change to update the inner frame width
         self.canvas.bind("<Configure>", self._on_canvas_configure)
 
-        # Hot/Cold Spot Overlay Checkboxes
-        hot_chk = ttk.Checkbutton(self.settings_panel, text='Show Hot Spot Overlay', variable=self.show_hot_spot_var, style='TCheckbutton')
-        hot_chk.grid(row=4, column=0, columnspan=2, sticky='w', padx=5, pady=(10,2))
-        Tooltip(hot_chk, "Toggle the display of the hot spot marker on the heatmap.")
-        cold_chk = ttk.Checkbutton(self.settings_panel, text='Show Cold Spot Overlay', variable=self.show_cold_spot_var, style='TCheckbutton')
-        cold_chk.grid(row=5, column=0, columnspan=2, sticky='w', padx=5, pady=(2,10))
-        Tooltip(cold_chk, "Toggle the display of the cold spot marker on the heatmap.")
+        # Hot/Cold Spot Overlay Checkboxes - These are now part of SettingsDialog
+        # hot_chk = ttk.Checkbutton(self.settings_panel, text='Show Hot Spot Overlay', variable=self.show_hot_spot_var, style='TCheckbutton')
+        # hot_chk.grid(row=4, column=0, columnspan=2, sticky='w', padx=5, pady=(10,2))
+        # Tooltip(hot_chk, "Toggle the display of the hot spot marker on the heatmap.")
+        # cold_chk = ttk.Checkbutton(self.settings_panel, text='Show Cold Spot Overlay', variable=self.show_cold_spot_var, style='TCheckbutton')
+        # cold_chk.grid(row=5, column=0, columnspan=2, sticky='w', padx=5, pady=(2,10))
+        # Tooltip(cold_chk, "Toggle the display of the cold spot marker on the heatmap.")
 
         # Propagate overlay settings to all heatmap views
         def _propagate_overlay(*args):
@@ -274,6 +381,15 @@ class SenxorApp(ttk.Frame):
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="Check for Updates...", command=self._manual_check_for_updates)
+
+        # --- Settings Menu ---
+        settings_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Settings", menu=settings_menu)
+        settings_menu.add_command(label="Display Settings", command=self._open_settings_dialog) # Changed command
+        # Add other settings options here as needed
+        # For example:
+        # settings_menu.add_separator()
+        # settings_menu.add_command(label="Another Setting", command=self._another_setting_action)
 
     def _on_canvas_configure(self, event):
         """Dynamically set the width of the inner frame to match the canvas width."""
@@ -595,67 +711,12 @@ class SenxorApp(ttk.Frame):
         finally:
             os.chdir(orig_cwd)
 
-    def _create_settings_panel(self, style):
-        self.settings_panel = ttk.LabelFrame(self.scrollable_inner_frame, text="Display Settings", style='TLabelframe', padding=(10,10))
-        # Position in row 1, spanning columns
-        self.settings_panel.grid(row=1, column=0, columnspan=2, sticky='new', padx=10, pady=(5,10))
-        self.settings_panel.grid_remove() # Hide by default
-
-        # Configure columns within the settings panel for layout
-        self.settings_panel.columnconfigure(0, weight=0) # Labels
-        self.settings_panel.columnconfigure(1, weight=1) # Controls (expand)
-        self.settings_panel.columnconfigure(2, weight=0) # Value display for sliders
-
-        # Colormap selector
-        ttk.Label(self.settings_panel, text='Colormap:', style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        cmap_menu = ttk.OptionMenu(self.settings_panel, self.colormap_var, self.colormap_var.get(), 'Jet','Hot','Magma','Inferno','Plasma','Viridis','Cividis','Twilight','Turbo')
-        cmap_menu.grid(row=0, column=1, sticky='ew', padx=5, pady=5)
-        Tooltip(cmap_menu, "Select the color palette for the thermal display.")
-
-        # Sample Number
-        ttk.Label(self.settings_panel, text='Sample #:', style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        sample_entry = ttk.Entry(self.settings_panel, textvariable=self.sample_number_var, width=15)
-        sample_entry.grid(row=1, column=1, sticky='ew', padx=5, pady=5)
-        Tooltip(sample_entry, "Identifier for the current sample/test run (used in snapshot filenames).")
-
-        # Smoothing sliders - Hot
-        ttk.Label(self.settings_panel, text='Hot Spot Smooth (frames):', style='Content.TLabel').grid(row=2, column=0, sticky='w', padx=5, pady=5)
-        hot_slider = ttk.Scale(self.settings_panel, from_=1, to=30, variable=self.hot_smooth_len_var, orient='horizontal', length=150)
-        hot_slider.grid(row=2, column=1, sticky='ew', padx=5, pady=5)
-        ttk.Label(self.settings_panel, textvariable=self.hot_smooth_len_var, style='Content.TLabel', width=3).grid(row=2, column=2, sticky='w', padx=(0, 5))
-        Tooltip(hot_slider, "Number of frames to average for the hot spot marker position (1-30).")
-
-        # Smoothing sliders - Cold
-        ttk.Label(self.settings_panel, text='Cold Spot Smooth (frames):', style='Content.TLabel').grid(row=3, column=0, sticky='w', padx=5, pady=5)
-        cold_slider = ttk.Scale(self.settings_panel, from_=1, to=30, variable=self.cold_smooth_len_var, orient='horizontal', length=150)
-        cold_slider.grid(row=3, column=1, sticky='ew', padx=5, pady=5)
-        ttk.Label(self.settings_panel, textvariable=self.cold_smooth_len_var, style='Content.TLabel', width=3).grid(row=3, column=2, sticky='w', padx=(0, 5))
-        Tooltip(cold_slider, "Number of frames to average for the cold spot marker position (1-30).")
-
-        # Hot/Cold Spot Overlay Checkboxes
-        hot_chk = ttk.Checkbutton(self.settings_panel, text='Show Hot Spot Overlay', variable=self.show_hot_spot_var, style='TCheckbutton')
-        hot_chk.grid(row=4, column=0, columnspan=2, sticky='w', padx=5, pady=(10,2))
-        Tooltip(hot_chk, "Toggle the display of the hot spot marker on the heatmap.")
-        cold_chk = ttk.Checkbutton(self.settings_panel, text='Show Cold Spot Overlay', variable=self.show_cold_spot_var, style='TCheckbutton')
-        cold_chk.grid(row=5, column=0, columnspan=2, sticky='w', padx=5, pady=(2,10))
-        Tooltip(cold_chk, "Toggle the display of the cold spot marker on the heatmap.")
-
-        # Max Voltage (global)
-        ttk.Label(self.settings_panel, text='Max Voltage (V):', style='Content.TLabel').grid(row=6, column=0, sticky='w', padx=5, pady=5)
-        max_voltage_spin = ttk.Spinbox(self.settings_panel, from_=0, to=20, increment=0.1, textvariable=self.max_voltage_var, width=8)
-        max_voltage_spin.grid(row=6, column=1, sticky='ew', padx=5, pady=5)
-        Tooltip(max_voltage_spin, "Global maximum voltage allowed for all operations (default 5V).")
-
-    def _toggle_settings_panel(self):
-        self.settings_panel_visible = not self.settings_panel_visible
-        if self.settings_panel_visible:
-            self.settings_panel.grid() # Show the panel
-            # Optionally, adjust row weights if needed, but grid() should be enough if rowconfigure is set
-        else:
-            self.settings_panel.grid_remove() # Hide the panel
-        # Force geometry update to reflect potential changes
-        self.scrollable_inner_frame.update_idletasks()
-        self.canvas.configure(scrollregion=self.canvas.bbox("all")) 
+    def _open_settings_dialog(self): # Renamed from _toggle_settings_panel
+        # Pass self (SenxorApp instance) and the style engine to the dialog
+        dialog = SettingsDialog(self.master, self, ttk.Style())
+        # The dialog's grab_set() handles modality.
+        # The dialog will destroy itself when closed.
+        # No need to manage visibility flags like self.settings_panel_visible
 
     def _update_trend_graph_aggregation(self):
         """Aggregate camera data according to aggregation mode and update the trend graph."""
