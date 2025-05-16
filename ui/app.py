@@ -298,6 +298,13 @@ class SenxorApp(ttk.Frame):
         self.heatmap_views.clear()
 
         active_cameras = self.camera_manager.get_all_cameras()
+        # Sort by serial number (camera_id_hexsn or sn)
+        def serial_key(cam):
+            serial = None
+            if hasattr(cam, 'mi48') and cam.mi48:
+                serial = getattr(cam.mi48, 'camera_id_hexsn', None) or getattr(cam.mi48, 'sn', None)
+            return serial or ''
+        active_cameras = sorted(active_cameras, key=serial_key)
 
         if not active_cameras:
             # Place "No cameras" message inside the camera_grid_frame
@@ -356,18 +363,18 @@ class SenxorApp(ttk.Frame):
 
         # Create a HeatmapView for each connected camera and position it on the grid
         for i, cam_instance in enumerate(active_cameras):
-            r_loop, c_loop = divmod(i, cols) # Renamed r, c to avoid conflict
-
-            # camera_container is now parented to self.camera_grid_frame
+            r_loop, c_loop = divmod(i, cols)
             camera_container = ttk.Frame(self.camera_grid_frame, style='Content.TFrame', padding=(5, 5))
-            # Grid into self.camera_grid_frame
             camera_container.grid(row=r_loop, column=c_loop, sticky='nsew', padx=padding_px, pady=padding_px)
-
             # COM-port / identifier label
             port_name = cam_instance.connected_port or f"ID-{i}"
+            serial_number = None
+            if hasattr(cam_instance, 'mi48') and cam_instance.mi48:
+                serial_number = getattr(cam_instance.mi48, 'camera_id_hexsn', None) or getattr(cam_instance.mi48, 'sn', None)
+            label_text = f"{port_name}: {serial_number}" if serial_number else port_name
             title_lbl = ttk.Label(
                 camera_container,
-                text=port_name,
+                text=label_text,
                 style='Content.TLabel',
                 font=('Segoe UI', 11, 'bold')
             )

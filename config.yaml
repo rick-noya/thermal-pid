@@ -13,7 +13,7 @@ pid:
   kp: 4
   ki: 0.0007
   kd: 0.0
-  setpoint: 60.0
+  setpoint: 200.0
   v_limits: [0.0, 6.0]
   sample_time: 0.1
 
@@ -49,3 +49,9 @@ tests:
   water_boil:
     boil_point: 150.0 # °C
     boil_dwell: 120.0 # seconds
+
+camera_ports:
+  "2021.46.1.034413": "COM17"
+  "2022.21.1.0467cc": "COM18"
+  "2022.21.1.046709": "COM19"
+  "2022.21.1.04617f": "COM20"

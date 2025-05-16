@@ -1,0 +1,100 @@
+import serial.tools.list_ports
+import sys
+import os
+
+# Add parent directory to sys.path to allow importing from devices
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+try:
+    from devices.camera import SenxorCamera
+    # Further imports if SenxorCamera or its dependencies need them explicitly for this script
+except ImportError as e:
+    print(f"Error importing SenxorCamera: {e}")
+    print("Please ensure that the script is in the project's root directory or adjust the PYTHONPATH.")
+    sys.exit(1)
+
+def query_all_ports():
+    ports = serial.tools.list_ports.comports()
+    if not ports:
+        print("No COM ports found.")
+        return
+
+    print("Scanning COM ports for Senxor/MI48 cameras...")
+    camera_mappings = {}
+
+    for port_info in ports:
+        port_name = port_info.device
+        print(f"\nAttempting to connect to camera on port: {port_name}")
+        
+        camera = None
+        try:
+            # Initialize SenxorCamera. It attempts to connect and configure.
+            # We don't need to start streaming for just getting the ID.
+            camera = SenxorCamera(port=port_name)
+
+            if camera.is_connected and camera.mi48:
+                # The get_camera_info() method populates camera_id, camera_id_hexsn, sn etc.
+                # We need to ensure get_camera_info() is called if it's not called by __init__ implicitly.
+                # SenxorCamera.__init__ calls _connect(), which calls connect_senxor(),
+                # which initializes MI48, and MI48.__init__ calls get_camera_info().
+                # So the info should be available.
+                
+                camera_id_hexsn = getattr(camera.mi48, 'camera_id_hexsn', None)
+                camera_sn_attr = getattr(camera.mi48, 'sn', None)
+
+                if camera_id_hexsn:
+                    print(f"  Successfully connected to camera on {port_name}")
+                    print(f"  Camera ID (Year.Week.Fab.SerNumHex): {camera_id_hexsn}")
+                    if camera_sn_attr:
+                         print(f"  Camera SN (SN+HexID): {camera_sn_attr}")
+                    camera_mappings[port_name] = camera_id_hexsn
+                elif camera_sn_attr: # Fallback if camera_id_hexsn is not there for some reason
+                    print(f"  Successfully connected to camera on {port_name}")
+                    print(f"  Camera SN (SN+HexID): {camera_sn_attr}")
+                    camera_mappings[port_name] = camera_sn_attr
+                else:
+                    print(f"  Connected to {port_name}, but could not retrieve a serial number.")
+            else:
+                print(f"  Could not establish a full connection to a Senxor/MI48 camera on {port_name}.")
+
+        except Exception as e:
+            print(f"  Error connecting to or querying camera on {port_name}: {e}")
+        finally:
+            if camera and camera.is_connected:
+                try:
+                    # SenxorCamera.stop() calls mi48.stop() which closes interfaces
+                    camera.stop() 
+                    print(f"  Closed connection to {port_name}")
+                except Exception as e:
+                    print(f"  Error closing camera on {port_name}: {e}")
+            elif camera: # If camera object exists but wasn't fully connected/mi48 object not there
+                if camera.mi48: # if mi48 object exists, try to call its stop method.
+                    try:
+                        camera.mi48.stop()
+                        print(f"  Closed MI48 interface for {port_name}")
+                    except Exception as e:
+                         print(f"  Error closing MI48 interface for {port_name}: {e}")
+
+
+    if camera_mappings:
+        print("\n--- Camera to COM Port Mappings ---")
+        for port, sn_id in camera_mappings.items():
+            print(f"  {port}: {sn_id}")
+        print("-----------------------------------")
+    else:
+        print("\nNo Senxor/MI48 cameras with identifiable serial numbers found.")
+
+if __name__ == "__main__":
+    # This is to ensure that if main.py (or other scripts) use 'if __name__ == "__main__"'
+    # their code doesn't run when this script imports them.
+    # However, SenxorCamera and its dependencies might print info during initialization.
+    
+    # It's better if the underlying libraries (MI48, SenxorCamera)
+    # use proper logging instead of print statements for non-essential info,
+    # or provide a quiet mode for library use.
+    # For now, we'll proceed.
+    
+    query_all_ports() 
