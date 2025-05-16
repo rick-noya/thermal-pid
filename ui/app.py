@@ -537,7 +537,9 @@ class SenxorApp(ttk.Frame):
         # Save trend graph data
         try:
             sample_name = self.sample_number_var.get().strip()
-            trend_graph_path = os.path.join(folder_name, "trend_graph.csv")
+            # Use sample name in trend graph filename
+            trend_graph_filename = f"{sample_name}_trend_graph.csv" if sample_name else "trend_graph.csv"
+            trend_graph_path = os.path.join(folder_name, trend_graph_filename)
             self.trend_graph.export_csv(sample_name=sample_name, output_path=trend_graph_path)
         except Exception as e:
             messagebox.showerror("Save All Data", f"Failed to save trend graph data: {e}")
@@ -545,7 +547,7 @@ class SenxorApp(ttk.Frame):
 
         # Save all camera snapshots
         num_saved = 0
-        failed_ports = []
+        failed_cams = []
         failed_msgs = []
         if not self.heatmap_views:
             messagebox.showerror("Save All Data", "No active cameras found.")
@@ -554,22 +556,31 @@ class SenxorApp(ttk.Frame):
         try:
             os.chdir(folder_name)
             for i, hv in enumerate(self.heatmap_views):
-                port_name = hv.camera.connected_port or f"Camera{i+1}"
+                # Get camera friendly name
+                camera_name = None
+                serial_number = None
+                if hasattr(hv.camera, 'mi48') and hv.camera.mi48:
+                    serial_number = getattr(hv.camera.mi48, 'camera_id_hexsn', None) or getattr(hv.camera.mi48, 'sn', None)
+                if serial_number:
+                    camera_name = getattr(config, 'CAMERA_NAME_MAP', {}).get(serial_number, None)
+                if not camera_name:
+                    camera_name = f"Camera{i+1}"
+                camera_name_safe = camera_name.replace(" ", "_").replace("/", "-")
                 try:
                     orig_sample = hv.sample_number_var.get()
-                    hv.sample_number_var.set(f"{sample_name}_{port_name}" if sample_name else port_name)
+                    hv.sample_number_var.set(f"{sample_name}" if sample_name else "snapshot")
                     hv.save_snapshot()
                     hv.sample_number_var.set(orig_sample)
                     num_saved += 1
                 except Exception as e:
-                    failed_ports.append(port_name)
-                    failed_msgs.append(f"{port_name}: {e}")
-            if num_saved > 0 and not failed_ports:
+                    failed_cams.append(camera_name_safe)
+                    failed_msgs.append(f"{camera_name_safe}: {e}")
+            if num_saved > 0 and not failed_cams:
                 messagebox.showinfo("Save All Data", f"Trend graph and all camera snapshots saved in '{folder_name}'.")
-            elif num_saved > 0 and failed_ports:
-                messagebox.showwarning("Save All Data", f"Trend graph and some camera snapshots saved in '{folder_name}'. Failed for: {', '.join(failed_ports)}.\n{chr(10).join(failed_msgs)}")
-            elif failed_ports:
-                messagebox.showerror("Save All Data", f"Failed to save camera snapshots: {', '.join(failed_ports)}.\n{chr(10).join(failed_msgs)}")
+            elif num_saved > 0 and failed_cams:
+                messagebox.showwarning("Save All Data", f"Trend graph and some camera snapshots saved in '{folder_name}'. Failed for: {', '.join(failed_cams)}.\n{chr(10).join(failed_msgs)}")
+            elif failed_cams:
+                messagebox.showerror("Save All Data", f"Failed to save camera snapshots: {', '.join(failed_cams)}.\n{chr(10).join(failed_msgs)}")
         finally:
             os.chdir(orig_cwd)
 

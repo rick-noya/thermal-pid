@@ -476,8 +476,19 @@ class HeatmapView(ttk.Frame):
             raise RuntimeError("No frame to save.")
         # Use sample number for filename
         sample_name = self.get_sample_number() or "snapshot"
+        # Get camera friendly name
+        camera_name = None
+        serial_number = None
+        if hasattr(self.camera, 'mi48') and self.camera.mi48:
+            serial_number = getattr(self.camera.mi48, 'camera_id_hexsn', None) or getattr(self.camera.mi48, 'sn', None)
+        if serial_number:
+            camera_name = config.CAMERA_NAME_MAP.get(serial_number, None)
+        if not camera_name:
+            camera_name = "Camera"
+        # Sanitize camera name for filename
+        camera_name_safe = camera_name.replace(" ", "_").replace("/", "-")
         # Save CSV
-        csv_filename = f"{sample_name}.csv"
+        csv_filename = f"{sample_name}_{camera_name_safe}.csv"
         np.savetxt(csv_filename, self.last_frame, delimiter=",", fmt="%.2f")
         # Save image
         min_temp = np.min(self.last_frame)
@@ -487,5 +498,5 @@ class HeatmapView(ttk.Frame):
         cmap_cv = COLORMAPS.get(cmap_name, cv.COLORMAP_VIRIDIS)
         color_img = cv.applyColorMap(norm, cmap_cv)
         img_pil = Image.fromarray(cv.cvtColor(color_img, cv.COLOR_BGR2RGB))
-        img_filename = f"{sample_name}.png"
+        img_filename = f"{sample_name}_{camera_name_safe}.png"
         img_pil.save(img_filename) 
