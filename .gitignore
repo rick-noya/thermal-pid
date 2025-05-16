@@ -48,3 +48,10 @@ logs/
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# PyInstaller artifacts
+*.spec
+*.exe
+*.dll
+*.pyd
+SenxorApp/
