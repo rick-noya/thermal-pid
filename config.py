@@ -32,7 +32,9 @@ __all__ = [
     "VSU_INTERVAL_MS",
     "WATER_BOIL_POINT",
     "WATER_BOIL_DWELL",
-    "CAMERA_PORT_MAPPINGS",
+    "CAMERA_PORT_MAP",
+    "CAMERA_SERIAL_ORDER",
+    "CAMERA_NAME_MAP",
     #   Helper
     "reload",
 ]
@@ -81,8 +83,12 @@ VSU_INTERVAL_MS: int = 100
 WATER_BOIL_POINT: float = 150.0  # °C
 WATER_BOIL_DWELL: float = 60.0   # seconds
 
-# Camera Port Mappings (Serial Number -> COM Port)
-CAMERA_PORT_MAPPINGS: Dict[str, str] = {}
+# Camera port mapping (serial -> com port). Empty by default.
+CAMERA_PORT_MAP: Dict[str, str] = {}
+# Preserve order of serials for consistent UI arrangement
+CAMERA_SERIAL_ORDER: list[str] = []
+# Optional friendly names for cameras (serial -> name/location)
+CAMERA_NAME_MAP: Dict[str, str] = {}
 
 # Preserve a copy of the defaults for reload() logic
 _defaults_snapshot = dict(
@@ -108,7 +114,9 @@ _defaults_snapshot = dict(
     VSU_INTERVAL_MS=VSU_INTERVAL_MS,
     WATER_BOIL_POINT=WATER_BOIL_POINT,
     WATER_BOIL_DWELL=WATER_BOIL_DWELL,
-    CAMERA_PORT_MAPPINGS=CAMERA_PORT_MAPPINGS.copy(),
+    CAMERA_PORT_MAP=CAMERA_PORT_MAP.copy(),
+    CAMERA_SERIAL_ORDER=CAMERA_SERIAL_ORDER.copy(),
+    CAMERA_NAME_MAP=CAMERA_NAME_MAP.copy(),
 )
 
 
@@ -151,7 +159,7 @@ def _load_yaml(path: str | None = None) -> Dict[str, Any]:
 
 def _apply_yaml(data: Dict[str, Any]) -> None:
     """Override module-level constants with values from YAML mapping."""
-    global STREAM_FPS, DEFAULT_PORT_CAM, DEFAULT_PORT_SIGGEN, SIGGEN_BAUD, SIGGEN_TIMEOUT, HEATMAP_UPDATE_MS, TREND_GRAPH_UPDATE_MS, TREND_GRAPH_DEFAULT_SPAN, PID_DEFAULTS, HOT_SMOOTH_LEN_DEFAULT, COLD_SMOOTH_LEN_DEFAULT, DEFAULT_COLORMAP, MAX_VOLTAGE_DEFAULT, SG_DEFAULT_FREQ, SG_DEFAULT_VOLTAGE, VSU_INITIAL_VOLTAGE, VSU_STEP_SIZE, VSU_STAB_WINDOW, VSU_STAB_THRESHOLD, VSU_INTERVAL_MS, WATER_BOIL_POINT, WATER_BOIL_DWELL, CAMERA_PORT_MAPPINGS
+    global STREAM_FPS, DEFAULT_PORT_CAM, DEFAULT_PORT_SIGGEN, SIGGEN_BAUD, SIGGEN_TIMEOUT, HEATMAP_UPDATE_MS, TREND_GRAPH_UPDATE_MS, TREND_GRAPH_DEFAULT_SPAN, PID_DEFAULTS, HOT_SMOOTH_LEN_DEFAULT, COLD_SMOOTH_LEN_DEFAULT, DEFAULT_COLORMAP, MAX_VOLTAGE_DEFAULT, SG_DEFAULT_FREQ, SG_DEFAULT_VOLTAGE, VSU_INITIAL_VOLTAGE, VSU_STEP_SIZE, VSU_STAB_WINDOW, VSU_STAB_THRESHOLD, VSU_INTERVAL_MS, WATER_BOIL_POINT, WATER_BOIL_DWELL, CAMERA_PORT_MAP, CAMERA_SERIAL_ORDER, CAMERA_NAME_MAP
 
     # Camera section
     cam_cfg = data.get("camera", {})
@@ -216,13 +224,25 @@ def _apply_yaml(data: Dict[str, Any]) -> None:
     globals()["WATER_BOIL_POINT"] = float(water_boil_cfg.get("boil_point", globals()["WATER_BOIL_POINT"]))
     globals()["WATER_BOIL_DWELL"] = float(water_boil_cfg.get("boil_dwell", globals()["WATER_BOIL_DWELL"]))
 
-    # Camera Port Mappings
-    cam_port_cfg = data.get("camera_ports", {})
-    if isinstance(cam_port_cfg, dict):
-        # Ensure keys are strings (serial numbers) and values are strings (COM ports)
-        globals()["CAMERA_PORT_MAPPINGS"] = {str(k): str(v) for k, v in cam_port_cfg.items()}
-    else:
-        globals()["CAMERA_PORT_MAPPINGS"] = {}
+    # Camera ports mapping
+    cam_port_map_cfg = data.get("camera_ports", {})
+    # Preserve insertion order (PyYAML >=3.13 keeps order)
+    if isinstance(cam_port_map_cfg, dict):
+        port_map: Dict[str, str] = {}
+        name_map: Dict[str, str] = {}
+        ordered_serials: list[str] = []
+        for serial_key, val in cam_port_map_cfg.items():
+            serial_str = str(serial_key)
+            if isinstance(val, dict):
+                port_map[serial_str] = str(val.get("port", ""))
+                if "name" in val:
+                    name_map[serial_str] = str(val["name"])
+            else:
+                port_map[serial_str] = str(val)
+            ordered_serials.append(serial_str)
+        globals()["CAMERA_PORT_MAP"] = port_map
+        globals()["CAMERA_NAME_MAP"] = name_map
+        globals()["CAMERA_SERIAL_ORDER"] = ordered_serials
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +258,7 @@ def reload(path: str | None = None) -> None:  # noqa: D401 – simple name
     values.
     """
     # Reset to hard-coded defaults first
-    global STREAM_FPS, DEFAULT_PORT_CAM, DEFAULT_PORT_SIGGEN, SIGGEN_BAUD, SIGGEN_TIMEOUT, HEATMAP_UPDATE_MS, TREND_GRAPH_UPDATE_MS, TREND_GRAPH_DEFAULT_SPAN, PID_DEFAULTS, HOT_SMOOTH_LEN_DEFAULT, COLD_SMOOTH_LEN_DEFAULT, DEFAULT_COLORMAP, MAX_VOLTAGE_DEFAULT, SG_DEFAULT_FREQ, SG_DEFAULT_VOLTAGE, VSU_INITIAL_VOLTAGE, VSU_STEP_SIZE, VSU_STAB_WINDOW, VSU_STAB_THRESHOLD, VSU_INTERVAL_MS, WATER_BOIL_POINT, WATER_BOIL_DWELL, CAMERA_PORT_MAPPINGS
+    global STREAM_FPS, DEFAULT_PORT_CAM, DEFAULT_PORT_SIGGEN, SIGGEN_BAUD, SIGGEN_TIMEOUT, HEATMAP_UPDATE_MS, TREND_GRAPH_UPDATE_MS, TREND_GRAPH_DEFAULT_SPAN, PID_DEFAULTS, HOT_SMOOTH_LEN_DEFAULT, COLD_SMOOTH_LEN_DEFAULT, DEFAULT_COLORMAP, MAX_VOLTAGE_DEFAULT, SG_DEFAULT_FREQ, SG_DEFAULT_VOLTAGE, VSU_INITIAL_VOLTAGE, VSU_STEP_SIZE, VSU_STAB_WINDOW, VSU_STAB_THRESHOLD, VSU_INTERVAL_MS, WATER_BOIL_POINT, WATER_BOIL_DWELL, CAMERA_PORT_MAP, CAMERA_SERIAL_ORDER, CAMERA_NAME_MAP
     STREAM_FPS = _defaults_snapshot["STREAM_FPS"]
     DEFAULT_PORT_CAM = _defaults_snapshot["DEFAULT_PORT_CAM"]
     DEFAULT_PORT_SIGGEN = _defaults_snapshot["DEFAULT_PORT_SIGGEN"]
@@ -261,7 +281,9 @@ def reload(path: str | None = None) -> None:  # noqa: D401 – simple name
     VSU_INTERVAL_MS = _defaults_snapshot["VSU_INTERVAL_MS"]
     WATER_BOIL_POINT = _defaults_snapshot["WATER_BOIL_POINT"]
     WATER_BOIL_DWELL = _defaults_snapshot["WATER_BOIL_DWELL"]
-    CAMERA_PORT_MAPPINGS = _defaults_snapshot["CAMERA_PORT_MAPPINGS"].copy()
+    CAMERA_PORT_MAP = _defaults_snapshot["CAMERA_PORT_MAP"].copy()
+    CAMERA_SERIAL_ORDER = _defaults_snapshot["CAMERA_SERIAL_ORDER"].copy()
+    CAMERA_NAME_MAP = _defaults_snapshot["CAMERA_NAME_MAP"].copy()
 
     # Apply overrides from YAML
     _apply_yaml(_load_yaml(path))

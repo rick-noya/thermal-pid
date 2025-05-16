@@ -303,7 +303,11 @@ class SenxorApp(ttk.Frame):
             serial = None
             if hasattr(cam, 'mi48') and cam.mi48:
                 serial = getattr(cam.mi48, 'camera_id_hexsn', None) or getattr(cam.mi48, 'sn', None)
-            return serial or ''
+            order_list = getattr(config, 'CAMERA_SERIAL_ORDER', [])
+            if serial in order_list:
+                return order_list.index(serial)
+            # If not in predefined order, sort after the defined ones
+            return len(order_list) + (0 if serial is None else hash(serial) & 0xFFFF_FFFF)
         active_cameras = sorted(active_cameras, key=serial_key)
 
         if not active_cameras:
@@ -371,7 +375,15 @@ class SenxorApp(ttk.Frame):
             serial_number = None
             if hasattr(cam_instance, 'mi48') and cam_instance.mi48:
                 serial_number = getattr(cam_instance.mi48, 'camera_id_hexsn', None) or getattr(cam_instance.mi48, 'sn', None)
-            label_text = f"{port_name}: {serial_number}" if serial_number else port_name
+            friendly_name = None
+            if serial_number:
+                friendly_name = getattr(config, 'CAMERA_NAME_MAP', {}).get(serial_number, None)
+            if serial_number and friendly_name:
+                label_text = f"{friendly_name} ({port_name}): {serial_number}"
+            elif serial_number:
+                label_text = f"{port_name}: {serial_number}"
+            else:
+                label_text = port_name
             title_lbl = ttk.Label(
                 camera_container,
                 text=label_text,

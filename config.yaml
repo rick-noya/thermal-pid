@@ -51,7 +51,15 @@ tests:
     boil_dwell: 120.0 # seconds
 
 camera_ports:
-  "2021.46.1.034413": "COM17"
-  "2022.21.1.0467cc": "COM18"
-  "2022.21.1.046709": "COM19"
-  "2022.21.1.04617f": "COM20"
+  "2021.46.1.034413":
+    port: "COM17"
+    name: "Top"
+  "2022.21.1.0467cc":
+    port: "COM18"
+    name: "0 degrees"
+  "2022.21.1.046709":
+    port: "COM19"
+    name: "120 degrees"
+  "2022.21.1.04617f":
+    port: "COM20"
+    name: "240 degrees"
