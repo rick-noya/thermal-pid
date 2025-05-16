@@ -10,11 +10,11 @@ signal_generator:
   default_voltage: 1.0 # V
 
 pid:
-  kp: 1.0
-  ki: 0.1
-  kd: 0.05
+  kp: 4
+  ki: 0.0007
+  kd: 0.0
   setpoint: 60.0
-  v_limits: [0.0, 5.0]
+  v_limits: [0.0, 6.0]
   sample_time: 0.1
 
 ui:
@@ -46,3 +46,6 @@ tests:
     stabilization_window: 10.0 # seconds
     stabilization_threshold: 3.0 # °C
     interval_ms: 100
+  water_boil:
+    boil_point: 150.0 # °C
+    boil_dwell: 120.0 # seconds

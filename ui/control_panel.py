@@ -5,6 +5,7 @@ import sys
 import os
 import serial.tools.list_ports
 import config
+import time
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir) # This gets the root of the project if ui is a subdir
@@ -43,7 +44,7 @@ class ControlPanel(ttk.LabelFrame):
         # Row 1: Test Strategy
         ttk.Label(pid_params_frame, text="Test Strategy:", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
         self.test_strategy_var = tk.StringVar(value='Temperature Set Point')
-        self.TEST_STRATEGIES = ['Temperature Set Point', 'Voltage Step-Up to Set Point']
+        self.TEST_STRATEGIES = ['Temperature Set Point', 'Voltage Step-Up to Set Point', 'Water Boil to Set Point']
         self.test_strategy_combo = ttk.Combobox(pid_params_frame, textvariable=self.test_strategy_var, values=self.TEST_STRATEGIES, state='readonly', width=25)
         self.test_strategy_combo.grid(row=1, column=1, sticky='ew', padx=5, pady=5)
         Tooltip(self.test_strategy_combo, "Select the test strategy for PID control.")
@@ -112,6 +113,36 @@ class ControlPanel(ttk.LabelFrame):
         self.save_on_setpoint_var = tk.BooleanVar(value=False)
         self.save_on_setpoint_chk = ttk.Checkbutton(pid_params_frame, text="Save all data when setpoint is reached", variable=self.save_on_setpoint_var, style='TCheckbutton')
         self.save_on_setpoint_chk.grid(row=5, column=0, columnspan=2, sticky='w', padx=5, pady=5)
+
+        # --- Water Boil Parameters (hidden unless needed) ---
+        self.water_boil_params_frame = ttk.Frame(pid_params_frame, style='Content.TFrame')
+        # Boil Point
+        ttk.Label(self.water_boil_params_frame, text="Boil Point (°C):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=2)
+        self.water_boil_point_var = tk.DoubleVar(value=config.WATER_BOIL_POINT)
+        self.water_boil_point_spin = ttk.Spinbox(self.water_boil_params_frame, from_=50, to=200, increment=0.5, textvariable=self.water_boil_point_var, width=8)
+        self.water_boil_point_spin.grid(row=0, column=1, sticky='ew', padx=5, pady=2)
+        Tooltip(self.water_boil_point_spin, "Temperature to boil off water before main setpoint.")
+        # Dwell Time
+        ttk.Label(self.water_boil_params_frame, text="Boil Dwell (s):", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=2)
+        self.water_boil_dwell_var = tk.DoubleVar(value=config.WATER_BOIL_DWELL)
+        self.water_boil_dwell_spin = ttk.Spinbox(self.water_boil_params_frame, from_=1, to=600, increment=1, textvariable=self.water_boil_dwell_var, width=8)
+        self.water_boil_dwell_spin.grid(row=1, column=1, sticky='ew', padx=5, pady=2)
+        Tooltip(self.water_boil_dwell_spin, "How long to hold at boil point before moving to setpoint.")
+        # Stabilization Window
+        ttk.Label(self.water_boil_params_frame, text="Stabilization Window (s):", style='Content.TLabel').grid(row=2, column=0, sticky='w', padx=5, pady=2)
+        self.water_boil_stab_window_var = tk.DoubleVar(value=config.VSU_STAB_WINDOW)
+        self.water_boil_stab_window_spin = ttk.Spinbox(self.water_boil_params_frame, from_=1, to=60, increment=0.5, textvariable=self.water_boil_stab_window_var, width=8)
+        self.water_boil_stab_window_spin.grid(row=2, column=1, sticky='ew', padx=5, pady=2)
+        Tooltip(self.water_boil_stab_window_spin, "How many seconds of stable temperature are required before starting dwell.")
+        # Stabilization Threshold
+        ttk.Label(self.water_boil_params_frame, text="Stabilization Threshold (°C):", style='Content.TLabel').grid(row=3, column=0, sticky='w', padx=5, pady=2)
+        self.water_boil_stab_thresh_var = tk.DoubleVar(value=config.VSU_STAB_THRESHOLD)
+        self.water_boil_stab_thresh_spin = ttk.Spinbox(self.water_boil_params_frame, from_=0.01, to=2, increment=0.01, textvariable=self.water_boil_stab_thresh_var, width=8)
+        self.water_boil_stab_thresh_spin.grid(row=3, column=1, sticky='ew', padx=5, pady=2)
+        Tooltip(self.water_boil_stab_thresh_spin, "Max allowed temperature fluctuation (°C) to consider stable.")
+        # Place but hide by default (now row 6)
+        self.water_boil_params_frame.grid(row=6, column=0, columnspan=2, sticky='ew', padx=5, pady=(0,5))
+        self.water_boil_params_frame.grid_remove()
 
         # --- PID Input Source & Control Section ---
         pid_control_frame = ttk.LabelFrame(self, text="PID Input & Control", style='TLabelframe', padding=(5,5))
@@ -378,6 +409,12 @@ class ControlPanel(ttk.LabelFrame):
             self.stop_pid_btn.configure(state='normal')
             self.enable_pid_chk.configure(state='disabled')
             self.start_voltage_stepup_strategy()
+        elif strategy == 'Water Boil to Set Point':
+            self.set_status("Starting Water Boil to Set Point strategy...")
+            self.start_pid_btn.configure(state='disabled')
+            self.stop_pid_btn.configure(state='normal')
+            self.enable_pid_chk.configure(state='disabled')
+            self.start_water_boil_strategy()
 
     def stop_all(self):
         self.pid.pause()
@@ -389,6 +426,9 @@ class ControlPanel(ttk.LabelFrame):
         # Stop voltage step-up strategy if running
         if hasattr(self, '_vsu_running'):
             self._vsu_running = False
+        # Stop water boil strategy if running
+        if hasattr(self, '_boil_running'):
+            self._boil_running = False
         self._reset_save_on_setpoint_flag()
         try:
             if self.siggen.is_open:
@@ -624,10 +664,15 @@ class ControlPanel(ttk.LabelFrame):
         self.after(self._vsu_interval_ms, self._vsu_step_loop)
 
     def _on_test_strategy_change(self, event=None):
-        if self.test_strategy_var.get() == 'Voltage Step-Up to Set Point':
+        strategy = self.test_strategy_var.get()
+        if strategy == 'Voltage Step-Up to Set Point':
             self.vsu_params_frame.grid()
         else:
             self.vsu_params_frame.grid_remove()
+        if strategy == 'Water Boil to Set Point':
+            self.water_boil_params_frame.grid()
+        else:
+            self.water_boil_params_frame.grid_remove()
 
     def _trigger_save_all_data_if_requested(self):
         if hasattr(self, 'save_on_setpoint_var') and self.save_on_setpoint_var.get() and not self._save_on_setpoint_triggered:
@@ -649,3 +694,74 @@ class ControlPanel(ttk.LabelFrame):
 
     def _reset_save_on_setpoint_flag(self):
         self._save_on_setpoint_triggered = False
+
+    def start_water_boil_strategy(self):
+        print("[WATER BOIL] Starting water boil strategy...")
+        self._boil_point = self.water_boil_point_var.get()
+        self._boil_dwell = self.water_boil_dwell_var.get()
+        self._boil_agg_mode = self.pid_agg_mode_var.get() if hasattr(self, 'pid_agg_mode_var') else 'average_mean'
+        self._boil_stab_window = self.water_boil_stab_window_var.get()
+        self._boil_stab_thresh = self.water_boil_stab_thresh_var.get()
+        self._boil_interval_ms = 500  # Check every 0.5s for boil phase
+        self._boil_buffer_size = max(2, int(self._boil_stab_window * 1000 // self._boil_interval_ms))
+        self._boil_temp_buffer = []
+        self._boil_phase = 'heatup'  # 'heatup', 'stabilize', or 'dwell'
+        self._boil_running = True
+        self.set_status(f"Heating to {self._boil_point}°C, then stabilize for {self._boil_stab_window}s, then dwell for {self._boil_dwell}s.")
+        self._boil_start_time = None
+        self.pid.update_setpoint(self._boil_point)
+        self.pid.resume()
+        self._water_boil_loop()
+
+    def _water_boil_loop(self):
+        if not self._boil_running:
+            print("[WATER BOIL] Not running, exiting loop.")
+            return
+        temp = None
+        if self.data_aggregator:
+            temp = self.data_aggregator.get_frames_for_pid(aggregation_mode=self._boil_agg_mode)
+        print(f"[WATER BOIL] Current temp: {temp}, phase: {self._boil_phase}")
+        if self._boil_phase == 'heatup':
+            if temp is not None and temp >= self._boil_point:
+                print(f"[WATER BOIL] Boil point reached: {temp} >= {self._boil_point}")
+                self._boil_phase = 'stabilize'
+                self._boil_temp_buffer = []
+                self.set_status(f"Boil point reached. Stabilizing for {self._boil_stab_window}s...")
+            self.after(self._boil_interval_ms, self._water_boil_loop)
+        elif self._boil_phase == 'stabilize':
+            if temp is not None:
+                self._boil_temp_buffer.append(temp)
+                if len(self._boil_temp_buffer) > self._boil_buffer_size:
+                    self._boil_temp_buffer.pop(0)
+            stabilized = False
+            if len(self._boil_temp_buffer) == self._boil_buffer_size:
+                tmax = max(self._boil_temp_buffer)
+                tmin = min(self._boil_temp_buffer)
+                delta = abs(tmax - tmin)
+                print(f"[WATER BOIL] Stabilization buffer full. tmax: {tmax}, tmin: {tmin}, delta: {delta}")
+                if delta < self._boil_stab_thresh:
+                    stabilized = True
+            if stabilized:
+                print("[WATER BOIL] Temperature stabilized. Starting dwell phase.")
+                self.set_status(f"Stabilized at {temp:.2f}°C. Dwell for {self._boil_dwell}s...")
+                self._boil_phase = 'dwell'
+                self._boil_start_time = time.time()
+            else:
+                remaining = self._boil_stab_window - (len(self._boil_temp_buffer) * self._boil_interval_ms / 1000)
+                self.set_status(f"Stabilizing at boil point... {max(0, remaining):.1f}s left.")
+            self.after(self._boil_interval_ms, self._water_boil_loop)
+        elif self._boil_phase == 'dwell':
+            if self._boil_start_time is None:
+                self._boil_start_time = time.time()
+            elapsed = time.time() - self._boil_start_time
+            remaining = self._boil_dwell - elapsed
+            print(f"[WATER BOIL] Dwell elapsed: {elapsed:.1f}s, remaining: {remaining:.1f}s")
+            if remaining > 0:
+                self.set_status(f"Boil dwell: {remaining:.1f} seconds remaining...")
+                self.after(self._boil_interval_ms, self._water_boil_loop)
+            else:
+                print("[WATER BOIL] Dwell complete. Switching to user setpoint PID control.")
+                self.set_status("Boil dwell complete. Switching to user setpoint PID control.")
+                self._boil_running = False
+                self.pid.update_setpoint(self.setpoint_var.get())
+                self.pid.resume()

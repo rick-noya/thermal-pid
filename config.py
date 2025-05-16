@@ -30,6 +30,8 @@ __all__ = [
     "VSU_STAB_WINDOW",
     "VSU_STAB_THRESHOLD",
     "VSU_INTERVAL_MS",
+    "WATER_BOIL_POINT",
+    "WATER_BOIL_DWELL",
     #   Helper
     "reload",
 ]
@@ -74,6 +76,10 @@ VSU_STAB_WINDOW: float = 10.0
 VSU_STAB_THRESHOLD: float = 3.0
 VSU_INTERVAL_MS: int = 100
 
+# Water Boil test defaults
+WATER_BOIL_POINT: float = 150.0  # °C
+WATER_BOIL_DWELL: float = 60.0   # seconds
+
 # Preserve a copy of the defaults for reload() logic
 _defaults_snapshot = dict(
     STREAM_FPS=STREAM_FPS,
@@ -96,6 +102,8 @@ _defaults_snapshot = dict(
     VSU_STAB_WINDOW=VSU_STAB_WINDOW,
     VSU_STAB_THRESHOLD=VSU_STAB_THRESHOLD,
     VSU_INTERVAL_MS=VSU_INTERVAL_MS,
+    WATER_BOIL_POINT=WATER_BOIL_POINT,
+    WATER_BOIL_DWELL=WATER_BOIL_DWELL,
 )
 
 
@@ -138,7 +146,7 @@ def _load_yaml(path: str | None = None) -> Dict[str, Any]:
 
 def _apply_yaml(data: Dict[str, Any]) -> None:
     """Override module-level constants with values from YAML mapping."""
-    global STREAM_FPS, DEFAULT_PORT_CAM, DEFAULT_PORT_SIGGEN, SIGGEN_BAUD, SIGGEN_TIMEOUT, HEATMAP_UPDATE_MS, TREND_GRAPH_UPDATE_MS, TREND_GRAPH_DEFAULT_SPAN, PID_DEFAULTS, HOT_SMOOTH_LEN_DEFAULT, COLD_SMOOTH_LEN_DEFAULT, DEFAULT_COLORMAP, MAX_VOLTAGE_DEFAULT, SG_DEFAULT_FREQ, SG_DEFAULT_VOLTAGE, VSU_INITIAL_VOLTAGE, VSU_STEP_SIZE, VSU_STAB_WINDOW, VSU_STAB_THRESHOLD, VSU_INTERVAL_MS
+    global STREAM_FPS, DEFAULT_PORT_CAM, DEFAULT_PORT_SIGGEN, SIGGEN_BAUD, SIGGEN_TIMEOUT, HEATMAP_UPDATE_MS, TREND_GRAPH_UPDATE_MS, TREND_GRAPH_DEFAULT_SPAN, PID_DEFAULTS, HOT_SMOOTH_LEN_DEFAULT, COLD_SMOOTH_LEN_DEFAULT, DEFAULT_COLORMAP, MAX_VOLTAGE_DEFAULT, SG_DEFAULT_FREQ, SG_DEFAULT_VOLTAGE, VSU_INITIAL_VOLTAGE, VSU_STEP_SIZE, VSU_STAB_WINDOW, VSU_STAB_THRESHOLD, VSU_INTERVAL_MS, WATER_BOIL_POINT, WATER_BOIL_DWELL
 
     # Camera section
     cam_cfg = data.get("camera", {})
@@ -198,6 +206,10 @@ def _apply_yaml(data: Dict[str, Any]) -> None:
     globals()["VSU_STAB_WINDOW"] = float(vsu_cfg.get("stabilization_window", globals()["VSU_STAB_WINDOW"]))
     globals()["VSU_STAB_THRESHOLD"] = float(vsu_cfg.get("stabilization_threshold", globals()["VSU_STAB_THRESHOLD"]))
     globals()["VSU_INTERVAL_MS"] = int(vsu_cfg.get("interval_ms", globals()["VSU_INTERVAL_MS"]))
+    # Water Boil test
+    water_boil_cfg = tests_cfg.get("water_boil", {})
+    globals()["WATER_BOIL_POINT"] = float(water_boil_cfg.get("boil_point", globals()["WATER_BOIL_POINT"]))
+    globals()["WATER_BOIL_DWELL"] = float(water_boil_cfg.get("boil_dwell", globals()["WATER_BOIL_DWELL"]))
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +225,7 @@ def reload(path: str | None = None) -> None:  # noqa: D401 – simple name
     values.
     """
     # Reset to hard-coded defaults first
-    global STREAM_FPS, DEFAULT_PORT_CAM, DEFAULT_PORT_SIGGEN, SIGGEN_BAUD, SIGGEN_TIMEOUT, HEATMAP_UPDATE_MS, TREND_GRAPH_UPDATE_MS, TREND_GRAPH_DEFAULT_SPAN, PID_DEFAULTS, HOT_SMOOTH_LEN_DEFAULT, COLD_SMOOTH_LEN_DEFAULT, DEFAULT_COLORMAP, MAX_VOLTAGE_DEFAULT, SG_DEFAULT_FREQ, SG_DEFAULT_VOLTAGE, VSU_INITIAL_VOLTAGE, VSU_STEP_SIZE, VSU_STAB_WINDOW, VSU_STAB_THRESHOLD, VSU_INTERVAL_MS
+    global STREAM_FPS, DEFAULT_PORT_CAM, DEFAULT_PORT_SIGGEN, SIGGEN_BAUD, SIGGEN_TIMEOUT, HEATMAP_UPDATE_MS, TREND_GRAPH_UPDATE_MS, TREND_GRAPH_DEFAULT_SPAN, PID_DEFAULTS, HOT_SMOOTH_LEN_DEFAULT, COLD_SMOOTH_LEN_DEFAULT, DEFAULT_COLORMAP, MAX_VOLTAGE_DEFAULT, SG_DEFAULT_FREQ, SG_DEFAULT_VOLTAGE, VSU_INITIAL_VOLTAGE, VSU_STEP_SIZE, VSU_STAB_WINDOW, VSU_STAB_THRESHOLD, VSU_INTERVAL_MS, WATER_BOIL_POINT, WATER_BOIL_DWELL
     STREAM_FPS = _defaults_snapshot["STREAM_FPS"]
     DEFAULT_PORT_CAM = _defaults_snapshot["DEFAULT_PORT_CAM"]
     DEFAULT_PORT_SIGGEN = _defaults_snapshot["DEFAULT_PORT_SIGGEN"]
@@ -234,6 +246,8 @@ def reload(path: str | None = None) -> None:  # noqa: D401 – simple name
     VSU_STAB_WINDOW = _defaults_snapshot["VSU_STAB_WINDOW"]
     VSU_STAB_THRESHOLD = _defaults_snapshot["VSU_STAB_THRESHOLD"]
     VSU_INTERVAL_MS = _defaults_snapshot["VSU_INTERVAL_MS"]
+    WATER_BOIL_POINT = _defaults_snapshot["WATER_BOIL_POINT"]
+    WATER_BOIL_DWELL = _defaults_snapshot["WATER_BOIL_DWELL"]
 
     # Apply overrides from YAML
     _apply_yaml(_load_yaml(path))
