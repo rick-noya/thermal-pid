@@ -3,99 +3,139 @@ from senxor.interfaces import MI_VID, MI_PIDs
 from .camera import SenxorCamera # Use relative import
 import time # Added for __main__ test block
 import threading # For hotplug monitor
-import config
+import config # Import the config module to access CAMERA_PORT_MAPPINGS
 
 class CameraManager:
     """Manages multiple SenxorCamera instances."""
     def __init__(self):
         self.cameras = [] # List of SenxorCamera instances
-        self.camera_ports = [] # List of discovered COM ports with Senxor cameras
+        # self.camera_ports = [] # No longer just a list of detected ports, managed by mapping
         self._hotplug_running = False
         self._hotplug_thread = None
         self._on_change_callback = None
 
-    def discover_cameras(self):
-        """Discovers all available Senxor camera ports."""
-        self.camera_ports = []
-        print("CameraManager: Discovering Senxor cameras...")
-        for p in serial.tools.list_ports.comports():
-            if p.vid == MI_VID and p.pid in MI_PIDs:
-                self.camera_ports.append(p.device)
-        if self.camera_ports:
-            print(f"CameraManager: Found cameras on ports: {', '.join(self.camera_ports)}")
-        else:
-            print("CameraManager: No Senxor cameras found.")
-        return self.camera_ports
+    def get_connected_camera_serials_and_ports(self):
+        """Scans all COM ports, connects to Senxor cameras, and returns a dict of {serial: port}."""
+        detected_cameras_info = {}
+        ports = serial.tools.list_ports.comports()
+        print("CameraManager: Scanning for connected camera serials and ports...")
+        for port_info in ports:
+            if not (port_info.vid == MI_VID and port_info.pid in MI_PIDs):
+                continue # Skip non-Senxor/MI48 ports
+            
+            port_name = port_info.device
+            cam_temp = None
+            try:
+                print(f"CameraManager: Checking port {port_name}...")
+                cam_temp = SenxorCamera(port=port_name, stream_fps=1) # Use low FPS for quick check
+                if cam_temp.is_connected and cam_temp.mi48:
+                    serial_num = getattr(cam_temp.mi48, 'camera_id_hexsn', None) or getattr(cam_temp.mi48, 'sn', None)
+                    if serial_num:
+                        detected_cameras_info[serial_num] = port_name
+                        print(f"CameraManager: Found camera {serial_num} on {port_name}")
+                    else:
+                        print(f"CameraManager: Camera on {port_name} connected but no serial number found.")
+            except Exception as e:
+                print(f"CameraManager: Error probing camera on {port_name}: {e}")
+            finally:
+                if cam_temp:
+                    cam_temp.stop() # Ensure port is released
+        return detected_cameras_info
 
     def connect_and_start_all(self, stream_fps=15, with_header=True):
-        """
-        Connects to all discovered cameras and starts their streaming threads.
-        Clears existing cameras before connecting.
-        ENFORCES camera_ports mapping from config.yaml: only initialize a camera on the COM port that matches the serial number in the mapping.
-        """
+        """ Connects to cameras based on config.CAMERA_PORT_MAPPINGS. """
         self.stop_all_streams() # Stop and clear any existing cameras first
         self.cameras = []
 
-        # Load camera_ports mapping from config.yaml
-        camera_ports_map = None
-        try:
-            yaml_data = config._load_yaml()
-            camera_ports_map = yaml_data.get("camera_ports", {})
-        except Exception as e:
-            print(f"CameraManager: Failed to load camera_ports mapping from config.yaml: {e}")
-            camera_ports_map = {}
+        configured_mappings = config.CAMERA_PORT_MAPPINGS
+        if not configured_mappings:
+            print("CameraManager: No camera port mappings found in config.yaml. Please run query_camera_ids.py and update config.")
+            # Fallback: Discover and connect to any available cameras if no mapping exists?
+            # For now, strictly adhere to mapping if it's intended to be enforced.
+            print("CameraManager: Attempting to auto-discover and connect to any available cameras as a fallback.")
+            self._connect_auto_discovered(stream_fps,with_header)
+            return len(self.cameras) > 0
 
-        # Step 1: Scan all available COM ports and get serial numbers
-        from devices.camera import SenxorCamera
-        available_ports = [p.device for p in serial.tools.list_ports.comports()]
-        detected_serials = {}
-        for port in available_ports:
-            try:
-                cam = SenxorCamera(port=port)
-                if cam.is_connected and cam.mi48:
-                    serial = getattr(cam.mi48, 'camera_id_hexsn', None) or getattr(cam.mi48, 'sn', None)
-                    if serial:
-                        detected_serials[serial] = port
-                cam.stop()
-            except Exception as e:
-                print(f"CameraManager: Error probing {port}: {e}")
-
-        # Step 2: For each serial in camera_ports_map, only connect if detected on mapped port
-        if not camera_ports_map:
-            print("CameraManager: No camera_ports mapping found in config.yaml. Will not enforce mapping.")
-            return False
+        print(f"CameraManager: Attempting to connect cameras based on config mapping: {configured_mappings}")
+        
+        # Get currently connected physical cameras and their actual ports
+        # This is a dict of {serial_num: actual_port}
+        currently_connected_serials_ports = self.get_connected_camera_serials_and_ports()
 
         all_started_successfully = True
-        for serial, mapped_port in camera_ports_map.items():
-            detected_port = detected_serials.get(serial)
-            if detected_port is None:
-                print(f"CameraManager: Serial {serial} not detected on any port. Skipping.")
+        cameras_to_start_on_ports = {}
+
+        for serial_num, configured_port in configured_mappings.items():
+            if serial_num in currently_connected_serials_ports:
+                actual_port = currently_connected_serials_ports[serial_num]
+                if actual_port.upper() == configured_port.upper():
+                    print(f"CameraManager: Camera {serial_num} found on configured port {configured_port}.")
+                    cameras_to_start_on_ports[serial_num] = configured_port
+                else:
+                    print(f"CameraManager: WARNING - Camera {serial_num} is configured for {configured_port} but found on {actual_port}. Using actual port {actual_port}.")
+                    # Decide: use actual_port or configured_port? Forcing configured_port might fail if camera moved.
+                    # Using actual_port is safer if the goal is to use the camera regardless of minor port changes.
+                    # If strict enforcement is needed, this logic needs to be tighter or only use configured_port.
+                    cameras_to_start_on_ports[serial_num] = actual_port # Use the port it's actually on
+            else:
+                print(f"CameraManager: WARNING - Camera {serial_num} configured for port {configured_port} is not detected.")
                 all_started_successfully = False
-                continue
-            if detected_port != mapped_port:
-                print(f"CameraManager: Serial {serial} detected on {detected_port}, but mapped to {mapped_port}. Skipping (enforcing mapping).")
-                all_started_successfully = False
-                continue
-            print(f"CameraManager: Initializing camera {serial} on mapped port {mapped_port}...")
-            cam = SenxorCamera(port=mapped_port, stream_fps=stream_fps, with_header=with_header)
+        
+        if not cameras_to_start_on_ports:
+            print("CameraManager: No configured cameras found connected. Nothing to start.")
+            return False
+            
+        print(f"CameraManager: Initializing {len(cameras_to_start_on_ports)} mapped camera(s)...")
+        for serial_num, port_to_use in cameras_to_start_on_ports.items():
+            print(f"CameraManager: Initializing camera {serial_num} on port {port_to_use}...")
+            cam = SenxorCamera(port=port_to_use, stream_fps=stream_fps, with_header=with_header)
+            # We need to make sure the SenxorCamera instance internally stores its serial number if not already
+            # For now, assume it can be retrieved via cam.mi48 properties after connection.
             if cam.is_connected:
+                # Store the serial number from config with the camera instance for later reference/sorting
+                # This assumes cam.mi48.camera_id_hexsn or cam.mi48.sn will match the serial_num from config
+                cam.config_serial_number = serial_num # Add this attribute for robust sorting later
                 if cam.start_streaming():
                     self.cameras.append(cam)
-                    print(f"CameraManager: Successfully started camera {serial} on {mapped_port}.")
+                    print(f"CameraManager: Successfully started camera {serial_num} on {port_to_use}.")
                 else:
-                    print(f"CameraManager: Failed to start streaming for camera {serial} on {mapped_port} though it connected.")
+                    print(f"CameraManager: Failed to start streaming for camera {serial_num} on {port_to_use}.")
                     all_started_successfully = False
             else:
-                print(f"CameraManager: Failed to connect to camera {serial} on {mapped_port}.")
+                print(f"CameraManager: Failed to connect to camera {serial_num} on {port_to_use}.")
                 all_started_successfully = False
 
         if self.cameras:
             num_successful = len(self.cameras)
-            print(f"CameraManager: Successfully connected and started {num_successful}/{len(camera_ports_map)} mapped camera(s).")
+            print(f"CameraManager: Successfully connected and started {num_successful}/{len(configured_mappings)} configured camera(s).")
         else:
-            print(f"CameraManager: No cameras were successfully started.")
-
+            print("CameraManager: No configured cameras were successfully started.")
+            
         return all_started_successfully and len(self.cameras) > 0
+
+    def _connect_auto_discovered(self, stream_fps=15, with_header=True):
+        """Fallback method to discover and connect any cameras if no mapping exists or fails."""
+        print("CameraManager: Auto-discovering cameras...")
+        discovered_ports = []
+        for p in serial.tools.list_ports.comports():
+            if p.vid == MI_VID and p.pid in MI_PIDs:
+                discovered_ports.append(p.device)
+        
+        if not discovered_ports:
+            print("CameraManager: Auto-discovery: No Senxor cameras found.")
+            return False
+        
+        print(f"CameraManager: Auto-discovery: Found {len(discovered_ports)} potential cameras. Connecting...")
+        for port in discovered_ports:
+            cam = SenxorCamera(port=port, stream_fps=stream_fps, with_header=with_header)
+            if cam.is_connected:
+                if cam.start_streaming():
+                    self.cameras.append(cam)
+                else:
+                    print(f"CameraManager: Auto-discovery: Failed to start streaming for {port}.")
+            else:
+                print(f"CameraManager: Auto-discovery: Failed to connect to {port}.")
+        return len(self.cameras) > 0
 
     def stop_all_streams(self):
         """Stops streaming and hardware for all managed cameras."""
@@ -110,6 +150,8 @@ class CameraManager:
 
     def get_all_cameras(self) -> list[SenxorCamera]:
         """Returns a list of all currently connected and streaming SenxorCamera instances."""
+        # Sorting by serial number should happen in the UI layer (SenxorApp) if needed for display order.
+        # This manager just provides the list of active cameras.
         return [cam for cam in self.cameras if cam.is_connected and cam.is_streaming]
 
     def get_all_latest_frames_and_headers(self) -> list[tuple]:
@@ -142,20 +184,49 @@ class CameraManager:
             print("CameraManager: Hotplug monitor stopped.")
 
     def _hotplug_loop(self, poll_interval):
-        prev_ports = set(self.camera_ports)
+        # Get initial set of connected serials based on config for comparison
+        # This needs to be robust. For now, let's assume connect_and_start_all handles changes.
+        # A more refined hotplug would compare serial numbers from config vs detected.
+        # For now, simple port count change or re-running connect_and_start_all can be a starting point.
+        
+        # Get an initial list of serial numbers from currently managed cameras for comparison
+        # This assumes that self.cameras is populated according to the config initially.
+        def get_managed_serials():
+            return {getattr(cam, 'config_serial_number', None) for cam in self.cameras if hasattr(cam, 'config_serial_number')}
+
+        prev_managed_serials = get_managed_serials()
+        prev_connected_physical_serials = set(self.get_connected_camera_serials_and_ports().keys())
+
         while self._hotplug_running:
-            self.discover_cameras()
-            current_ports = set(self.camera_ports)
-            if current_ports != prev_ports:
-                print(f"CameraManager: Hotplug event detected. Ports changed: {prev_ports} -> {current_ports}")
-                self.connect_and_start_all()  # This will add new cameras and start them
-                if self._on_change_callback:
+            time.sleep(poll_interval)
+            current_connected_physical_serials = set(self.get_connected_camera_serials_and_ports().keys())
+            
+            # Check if the set of physically connected serials has changed
+            # OR if the set of serials we *expect* to manage (from config) is different from what's running.
+            expected_serials_from_config = set(config.CAMERA_PORT_MAPPINGS.keys())
+
+            if current_connected_physical_serials != prev_connected_physical_serials or \
+               get_managed_serials() != expected_serials_from_config:
+                
+                print(f"CameraManager: Hotplug event detected.")
+                print(f"  Previous physical serials: {prev_connected_physical_serials}")
+                print(f"  Current physical serials:  {current_connected_physical_serials}")
+                print(f"  Previously managed serials (from config): {prev_managed_serials}")
+                print(f"  Expected serials from config: {expected_serials_from_config}")
+                
+                print("CameraManager: Re-evaluating camera connections based on config...")
+                self.connect_and_start_all()  # Re-run connection logic based on config
+                
+                current_managed_serials = get_managed_serials()
+                if self._on_change_callback and (current_managed_serials != prev_managed_serials or current_connected_physical_serials != prev_connected_physical_serials) :
+                    print("CameraManager: Invoking on_change_callback due to changes.")
                     try:
                         self._on_change_callback()
                     except Exception as e:
                         print(f"CameraManager: Error in hotplug callback: {e}")
-                prev_ports = current_ports
-            time.sleep(poll_interval)
+                
+                prev_managed_serials = current_managed_serials
+                prev_connected_physical_serials = current_connected_physical_serials
 
     def __del__(self):
         print("CameraManager: __del__ called. Stopping all streams and hotplug monitor.")
