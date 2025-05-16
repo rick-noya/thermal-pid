@@ -6,4 +6,5 @@ tk
 pyserial
 pyvisa
 simple-pid
-pyyaml>=6.0 
+pyyaml>=6.0
+packaging 
