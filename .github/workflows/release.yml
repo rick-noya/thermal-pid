@@ -1,0 +1,99 @@
+name: Build & Release SenxorApp
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    name: Build and publish Windows release
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v3
+
+      # ---------------------------
+      # Determine version from tag
+      # ---------------------------
+      - name: Extract version info
+        id: vars
+        run: |
+          $tag = "$env:GITHUB_REF" -replace 'refs/tags/',''
+          $version = $tag -replace '^v',''
+          Write-Host "Tag = $tag"
+          Write-Host "Version = $version"
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # ---------------------------
+      # Setup Python & dependencies
+      # ---------------------------
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller packaging
+
+      # ---------------------------
+      # Build executable with PyInstaller
+      # ---------------------------
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --clean --noconfirm senxor_app.spec
+
+      # ---------------------------
+      # Package build output
+      # ---------------------------
+      - name: Create ZIP archive
+        run: |
+          $zipName = "SenxorApp-v${{ steps.vars.outputs.version }}-win64.zip"
+          Compress-Archive -Path "dist/SenxorApp/*" -DestinationPath $zipName
+          Write-Host "Created $zipName"
+
+      # ---------------------------
+      # Compute SHA256 checksum
+      # ---------------------------
+      - name: Compute SHA256
+        id: checksum
+        run: |
+          $zipName = "SenxorApp-v${{ steps.vars.outputs.version }}-win64.zip"
+          $hash = (Get-FileHash -Algorithm SHA256 $zipName).Hash.ToUpper()
+          Write-Host "SHA256 = $hash"
+          "sha256=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # ---------------------------
+      # Generate latest.json manifest
+      # ---------------------------
+      - name: Generate latest.json
+        run: |
+          $manifest = @{
+            version  = "${{ steps.vars.outputs.version }}"
+            url      = "https://github.com/${{ github.repository }}/releases/download/${{ steps.vars.outputs.tag }}/SenxorApp-v${{ steps.vars.outputs.version }}-win64.zip"
+            sha256   = "${{ steps.checksum.outputs.sha256 }}"
+            changelog = "https://github.com/${{ github.repository }}/releases/tag/${{ steps.vars.outputs.tag }}"
+          } | ConvertTo-Json -Depth 3
+          $manifest | Out-File -FilePath latest.json -Encoding utf8
+          Write-Host "latest.json contents:\n$manifest"
+
+      # ---------------------------
+      # Publish GitHub release & upload assets
+      # ---------------------------
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          files: |
+            SenxorApp-v${{ steps.vars.outputs.version }}-win64.zip
+            latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

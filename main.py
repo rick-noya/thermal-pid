@@ -7,6 +7,7 @@ from controllers.pid_controller import TemperaturePID
 from ui.app import SenxorApp
 import config
 import time
+from updater.update_client import client as auto_update
 
 def main():
     camera_manager = CameraManager()
@@ -43,6 +44,9 @@ def main():
     root = tk.Tk()
     app = SenxorApp(root, camera_manager=camera_manager, siggen=siggen, pid=pid)
     
+    # Kick off a non-blocking update check (will prompt user if a newer version exists)
+    auto_update.check_for_updates_async(parent=root)
+
     try:
         root.mainloop()
     finally:

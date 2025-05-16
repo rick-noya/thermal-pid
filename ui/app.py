@@ -267,6 +267,14 @@ class SenxorApp(ttk.Frame):
         self.trend_graph_update_interval = config.TREND_GRAPH_UPDATE_MS  # ms
         self.after(self.trend_graph_update_interval, self._update_trend_graph_aggregation)
 
+        # --- Menu Bar ---
+        menubar = tk.Menu(self.master)
+        self.master.config(menu=menubar)
+
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="Check for Updates...", command=self._manual_check_for_updates)
+
     def _on_canvas_configure(self, event):
         """Dynamically set the width of the inner frame to match the canvas width."""
         canvas_width = event.width
@@ -712,3 +720,7 @@ class SenxorApp(ttk.Frame):
         except Exception as e:
             print(f"Error setting signal generator to 0V on close: {e}")
         self.master.destroy() 
+
+    def _manual_check_for_updates(self):
+        from updater.update_client import client as auto_update
+        auto_update.check_for_updates_async(parent=self.master, user_initiated=True) 
