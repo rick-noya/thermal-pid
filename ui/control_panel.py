@@ -699,7 +699,6 @@ class ControlPanel(ttk.LabelFrame):
         print("[WATER BOIL] Starting water boil strategy...")
         self._boil_point = self.water_boil_point_var.get()
         self._boil_dwell = self.water_boil_dwell_var.get()
-        self._boil_agg_mode = self.pid_agg_mode_var.get() if hasattr(self, 'pid_agg_mode_var') else 'average_mean'
         self._boil_stab_window = self.water_boil_stab_window_var.get()
         self._boil_stab_thresh = self.water_boil_stab_thresh_var.get()
         self._boil_interval_ms = 500  # Check every 0.5s for boil phase
@@ -718,9 +717,11 @@ class ControlPanel(ttk.LabelFrame):
             print("[WATER BOIL] Not running, exiting loop.")
             return
         temp = None
+        # Always use the current PID aggregation mode
+        agg_mode = getattr(self.pid, 'pid_aggregation_mode', 'average_mean')
         if self.data_aggregator:
-            temp = self.data_aggregator.get_frames_for_pid(aggregation_mode=self._boil_agg_mode)
-        print(f"[WATER BOIL] Current temp: {temp}, phase: {self._boil_phase}")
+            temp = self.data_aggregator.get_frames_for_pid(aggregation_mode=agg_mode)
+        print(f"[WATER BOIL] Current temp: {temp}, phase: {self._boil_phase}, agg_mode: {agg_mode}")
         if self._boil_phase == 'heatup':
             if temp is not None and temp >= self._boil_point:
                 print(f"[WATER BOIL] Boil point reached: {temp} >= {self._boil_point}")

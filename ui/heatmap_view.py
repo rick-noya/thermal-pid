@@ -35,6 +35,8 @@ class HeatmapView(ttk.Frame):
         
         self.img_label = ttk.Label(self) # No specific style, will inherit from parent or default TFrame
         self.img_label.grid(row=0, column=0, padx=5, pady=5, sticky='nsew')
+        self.stats_label = ttk.Label(self, style='Content.TLabel')
+        self.stats_label.grid(row=1, column=0, padx=5, pady=(0,5), sticky='ew')
         self.last_frame = None
         # self.last_overlay = None # Not used
         self.last_size = self.target_size
@@ -47,7 +49,7 @@ class HeatmapView(ttk.Frame):
         # --- Controls frame (optional) ---
         self.controls_frame = ttk.Frame(self, style='Content.TFrame', padding=(5,5))
         if show_controls:
-            self.controls_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=5)
+            self.controls_frame.grid(row=2, column=0, sticky='ew', padx=5, pady=5)
 
         # Configure columns for even spacing of control groups (only if visible)
         if show_controls:
@@ -372,36 +374,15 @@ class HeatmapView(ttk.Frame):
                 roi_min = np.min(roi)
                 roi_max = np.max(roi)
                 roi_delta = roi_max - roi_min
-                
-                # Add summary text below the heatmap
-                summary_text = f"Box: Low: {roi_min:.1f}°C | High: {roi_max:.1f}°C | Δ: {roi_delta:.1f}°C"
-                
-                # Draw a semi-transparent background for the text
-                bg_padding = 5
-                font_face = cv.FONT_HERSHEY_SIMPLEX
-                font_scale = 0.5
-                thickness = 1
-                (text_w, text_h), _ = cv.getTextSize(summary_text, font_face, font_scale, thickness)
-                text_y = view_h - 10
-                
-                # Create a copy with the summary overlay
-                overlay = color_img.copy()
-                cv.rectangle(overlay, 
-                            (view_w//2 - text_w//2 - bg_padding, text_y - text_h - bg_padding),
-                            (view_w//2 + text_w//2 + bg_padding, text_y + bg_padding),
-                            (0, 0, 0), -1)
-                cv.addWeighted(overlay, 0.7, color_img, 0.3, 0, color_img)
-                
-                # Draw the text
-                cv.putText(color_img, summary_text, 
-                          (view_w//2 - text_w//2, text_y), 
-                          font_face, font_scale, (255, 255, 255), thickness, cv.LINE_AA)
-                
-                # Convert back to RGB for display
-                img_rgb = cv.cvtColor(color_img, cv.COLOR_BGR2RGB)
+                # Move summary text to label below image
+                summary_text = f"Box: Low: {roi_min:.1f}C | High: {roi_max:.1f}C | Δ: {roi_delta:.1f}C"
+                self.stats_label.config(text=summary_text)
+            else:
+                self.stats_label.config(text="")
         except Exception as e:
             # If there's an error, continue without the summary
             print(f"Error calculating ROI temperature: {e}")
+            self.stats_label.config(text="")
         
         img_pil = Image.fromarray(img_rgb)
         img_tk = ImageTk.PhotoImage(img_pil)
