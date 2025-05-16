@@ -110,7 +110,7 @@ class ControlPanel(ttk.LabelFrame):
         Tooltip(self.update_pid_btn, "Apply the current PID parameters (Setpoint, Kp, Ki, Kd).")
 
         # Row 5: Save on setpoint checkbox
-        self.save_on_setpoint_var = tk.BooleanVar(value=False)
+        self.save_on_setpoint_var = tk.BooleanVar(value=getattr(config, 'SAVE_ON_SETPOINT_DEFAULT', True))
         self.save_on_setpoint_chk = ttk.Checkbutton(pid_params_frame, text="Save all data when setpoint is reached", variable=self.save_on_setpoint_var, style='TCheckbutton')
         self.save_on_setpoint_chk.grid(row=5, column=0, columnspan=2, sticky='w', padx=5, pady=5)
 
@@ -749,6 +749,9 @@ class ControlPanel(ttk.LabelFrame):
                 self.set_status(f"Stabilized at {temp:.2f}°C. Dwell for {self._boil_dwell}s...")
                 self._boil_phase = 'dwell'
                 self._boil_start_time = time.time()
+                # --- Best practices fix: Explicitly set PID setpoint and resume PID at start of dwell phase ---
+                self.pid.update_setpoint(self._boil_point)
+                self.pid.resume()
             else:
                 remaining = self._boil_stab_window - (len(self._boil_temp_buffer) * self._boil_interval_ms / 1000)
                 self.set_status(f"Stabilizing at boil point... {max(0, remaining):.1f}s left.")
