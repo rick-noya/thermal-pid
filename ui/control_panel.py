@@ -683,6 +683,8 @@ class ControlPanel(ttk.LabelFrame):
             if app is not None and hasattr(app, '_save_all_data'):
                 app.after(0, app._save_all_data)
                 self._save_on_setpoint_triggered = True
+                # Stop the test and set voltage to 0 after saving
+                app.after(100, self.stop_all)
             else:
                 print("[PID] Could not find _save_all_data method on any parent.")
 
