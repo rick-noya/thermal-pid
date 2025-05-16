@@ -475,7 +475,9 @@ class HeatmapView(ttk.Frame):
         if self.last_frame is None:
             raise RuntimeError("No frame to save.")
         # Use sample number for filename
-        sample_name = self.get_sample_number() or "snapshot"
+        raw_sample_name = self.get_sample_number() or "snapshot"
+        # Sanitize sample name for safe filenames: replace spaces and slashes
+        sample_name = raw_sample_name.strip().replace(" ", "_").replace("/", "-")
         # Get camera friendly name
         camera_name = None
         serial_number = None

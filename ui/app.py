@@ -447,6 +447,7 @@ class SenxorApp(ttk.Frame):
             sample_name = self.heatmap_views[0].get_sample_number()
         
         if hasattr(self, 'trend_graph') and self.trend_graph:
+            # Let TrendGraph handle sanitization and timestamp internally
             self.trend_graph.export_csv(sample_name=sample_name) 
 
     def refresh_camera_views(self):
@@ -537,8 +538,10 @@ class SenxorApp(ttk.Frame):
         # Save trend graph data
         try:
             sample_name = self.sample_number_var.get().strip()
-            # Use sample name in trend graph filename
-            trend_graph_filename = f"{sample_name}_trend_graph.csv" if sample_name else "trend_graph.csv"
+            raw_sample_name = self.sample_number_var.get().strip()
+            sample_name_safe = raw_sample_name.replace(" ", "_").replace("/", "-") if raw_sample_name else ""
+            # Use sanitized sample name in trend graph filename
+            trend_graph_filename = f"{sample_name_safe}_trend_graph.csv" if sample_name_safe else "trend_graph.csv"
             trend_graph_path = os.path.join(folder_name, trend_graph_filename)
             self.trend_graph.export_csv(sample_name=sample_name, output_path=trend_graph_path)
         except Exception as e:
@@ -568,7 +571,7 @@ class SenxorApp(ttk.Frame):
                 camera_name_safe = camera_name.replace(" ", "_").replace("/", "-")
                 try:
                     orig_sample = hv.sample_number_var.get()
-                    hv.sample_number_var.set(f"{sample_name}" if sample_name else "snapshot")
+                    hv.sample_number_var.set(f"{sample_name_safe}" if sample_name_safe else "snapshot")
                     hv.save_snapshot()
                     hv.sample_number_var.set(orig_sample)
                     num_saved += 1
