@@ -114,7 +114,6 @@ _defaults_snapshot = dict(
     VSU_INTERVAL_MS=VSU_INTERVAL_MS,
     WATER_BOIL_POINT=WATER_BOIL_POINT,
     WATER_BOIL_DWELL=WATER_BOIL_DWELL,
-    CAMERA_PORT_MAP=CAMERA_PORT_MAP.copy(),
     CAMERA_SERIAL_ORDER=CAMERA_SERIAL_ORDER.copy(),
     CAMERA_NAME_MAP=CAMERA_NAME_MAP.copy(),
 )
@@ -228,19 +227,14 @@ def _apply_yaml(data: Dict[str, Any]) -> None:
     cam_port_map_cfg = data.get("camera_ports", {})
     # Preserve insertion order (PyYAML >=3.13 keeps order)
     if isinstance(cam_port_map_cfg, dict):
-        port_map: Dict[str, str] = {}
         name_map: Dict[str, str] = {}
         ordered_serials: list[str] = []
         for serial_key, val in cam_port_map_cfg.items():
             serial_str = str(serial_key)
             if isinstance(val, dict):
-                port_map[serial_str] = str(val.get("port", ""))
                 if "name" in val:
                     name_map[serial_str] = str(val["name"])
-            else:
-                port_map[serial_str] = str(val)
             ordered_serials.append(serial_str)
-        globals()["CAMERA_PORT_MAP"] = port_map
         globals()["CAMERA_NAME_MAP"] = name_map
         globals()["CAMERA_SERIAL_ORDER"] = ordered_serials
 
