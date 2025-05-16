@@ -21,7 +21,7 @@ except ImportError:  # Fallback if __version__ not set for some reason
 
 
 DEFAULT_MANIFEST_URL = (
-    "https://raw.githubusercontent.com/YOUR_GITHUB_ORG/Senxor/releases/latest.json"
+    "https://github.com/rick-noya/thermal-pid/releases/download/0.1.0/latest.json"
 )
 
 _CHECK_INTERVAL_SECONDS = 60 * 60 * 24  # once a day
