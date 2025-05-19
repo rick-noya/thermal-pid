@@ -64,6 +64,7 @@ class SerialStatusBroadcaster:
             msg["warning"] = True
         import json
         msg_str = json.dumps(msg) + "\n"
+        logger.info(f"SerialStatusBroadcaster: Sending to display: {msg_str.strip()}")
         with self.lock:
             if self.ser and msg_str != self.last_sent:
                 try:

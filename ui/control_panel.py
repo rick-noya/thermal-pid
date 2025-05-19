@@ -419,6 +419,7 @@ class ControlPanel(ttk.LabelFrame):
         self._reset_save_on_setpoint_flag()
         strategy = self.test_strategy_var.get()
         logger.info("PID test started using strategy '%s' with setpoint %.2f°C", strategy, self.setpoint_var.get())
+        self._current_phase_desc = "Test Started"
         if self.status_broadcaster:
             self.status_broadcaster.send_status("Test Started", "00:00:00", False, max_temp=None, cooling_down=False)
         if strategy == 'Temperature Set Point':
@@ -432,7 +433,6 @@ class ControlPanel(ttk.LabelFrame):
             # --- Timer init ---
             self._test_start_time = time.time()
             self._cooling_start_time = None
-            self._current_phase_desc = "Heating"
             self._update_phase_timer("Heating", self._test_start_time)
             self._timer_after_id = self.after(1000, self._timer_tick)
         elif strategy == 'Voltage Step-Up to Set Point':
@@ -452,33 +452,23 @@ class ControlPanel(ttk.LabelFrame):
         logger.info("PID test stopped by user.")
         self.pid.pause()
         self.set_status("PID control stopped.")
-        # Potentially disable stop, enable start
         self.start_pid_btn.configure(state='normal')
         self.stop_pid_btn.configure(state='disabled')
-        self.enable_pid_chk.configure(state='normal') # Re-enable checkbox
-        # Stop voltage step-up strategy if running
+        self.enable_pid_chk.configure(state='normal')
         if hasattr(self, '_vsu_running'):
             self._vsu_running = False
-        # Stop water boil strategy if running
         if hasattr(self, '_boil_running'):
             self._boil_running = False
         self._reset_save_on_setpoint_flag()
         try:
             if self.siggen.is_open:
-                self.siggen.set_voltage(0.0) # Ensure voltage is set to 0 on stop
+                self.siggen.set_voltage(0.0)
                 self.set_status("PID stopped. SigGen output set to 0V.")
         except Exception as e:
             self.set_status(f"PID stopped. SigGen error: {e}")
-        # Log PID stop event
         self._log_trend_graph_event("PID Stopped")
-
-        # Switch to cooling timer phase
-        if self._test_start_time is not None and self._cooling_start_time is None:
-            self._cooling_start_time = time.time()
-            self._current_phase_desc = "Cooling"
-            self._update_phase_timer("Cooling", self._cooling_start_time)
-            self._timer_after_id = self.after(1000, self._cooling_timer_tick)
-
+        if self._cooling_start_time is None:
+            self._start_cooling_phase()
         if self.status_broadcaster:
             self.status_broadcaster.send_status("Cooling", "00:00:00", True, max_temp=None, cooling_down=True)
 
