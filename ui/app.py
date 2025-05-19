@@ -347,8 +347,16 @@ class SenxorApp(ttk.Frame):
         # Configure row weights *within* the scrollable frame
         self.scrollable_inner_frame.rowconfigure(0, weight=0)  # Status/Settings Btn row
         self.scrollable_inner_frame.rowconfigure(1, weight=0)  # Settings Panel (dynamically managed)
-        self.scrollable_inner_frame.rowconfigure(2, weight=1)  # Paned window (CP + Heatmap)
+        # Keep camera/paned section from hogging vertical space
+        self.scrollable_inner_frame.rowconfigure(2, weight=0)  # Paned window (CP + Heatmap)
+        # Let trend-graph take remaining space
         self.scrollable_inner_frame.rowconfigure(3, weight=1)  # Trend graph
+
+        # Explicitly cap the camera section height (≤ 50% of screen)
+        max_cam_h = int(self.master.winfo_screenheight() * 0.5)
+        self.camera_frame.configure(height=max_cam_h)
+        # Prevent grid geometry from expanding this frame beyond the fixed height
+        self.camera_frame.grid_propagate(False)
 
         # Set initial PanedWindow sash position
         self.after(100, self.set_initial_pane_proportions)
@@ -497,7 +505,7 @@ class SenxorApp(ttk.Frame):
         tile_h = max(1, int(tile_w * TILE_RATIO))
 
         screen_h = self.master.winfo_screenheight()
-        max_total_h = int(screen_h * 0.4) # Limit camera view height a bit more if needed
+        max_total_h = int(screen_h * 0.45)  # Hard cap ~45 % of screen height for *all* rows
 
         # If tiles would exceed max height, shrink them proportionally
         if tile_h * rows + (rows + 1) * padding_px > max_total_h:
@@ -662,8 +670,8 @@ class SenxorApp(ttk.Frame):
         self.master_controls_frame.grid(row=0, column=0, sticky='ew', padx=5, pady=(5,0)) # pady bottom 0 to be close to grid
 
         # Configure layout – we'll reserve columns for simple controls plus spacer and save button
-        for idx in range(6):
-            weight = 1 if idx == 4 else 0  # column4 is the spacer that absorbs extra space
+        for idx in range(7):
+            weight = 1 if idx == 5 else 0  # column5 will act as spacer now
             self.master_controls_frame.columnconfigure(idx, weight=weight)
 
         # --- Simple-mode controls (initially hidden; shown via _apply_view_mode) ---
@@ -678,6 +686,21 @@ class SenxorApp(ttk.Frame):
         )
         # Propagate selection change to ControlPanel handler so internal state updates
         self.simple_strategy_combo.bind('<<ComboboxSelected>>', self.control_panel._on_test_strategy_change)
+
+        # Open Serial (blue) style
+        style.configure('Open.TButton', background='#1565c0', foreground='white', font=('Segoe UI', 11, 'bold'), padding=(14,8), borderwidth=0)
+        style.map('Open.TButton',
+            background=[('active', '#0d47a1'), ('pressed', '#42a5f5')],
+            relief=[('pressed', 'sunken'), ('!pressed', 'flat')])
+
+        # Open Serial button (simple view)
+        self.simple_open_serial_btn = ttk.Button(
+            self.master_controls_frame,
+            text="Open SG",  # SG = Signal Generator
+            command=self.control_panel.open_serial,
+            style='Open.TButton',
+            width=10,
+        )
 
         # Start / Stop buttons that call through to ControlPanel methods
         self.simple_start_btn = ttk.Button(
@@ -695,15 +718,17 @@ class SenxorApp(ttk.Frame):
             width=10,
         )
 
-        # Place widgets – default grid positions
+        # Place widgets with updated columns
         self.simple_strategy_lbl.grid(row=0, column=0, sticky='w', padx=5, pady=2)
         self.simple_strategy_combo.grid(row=0, column=1, sticky='w', padx=5, pady=2)
-        self.simple_start_btn.grid(row=0, column=2, sticky='ew', padx=5, pady=2)
-        self.simple_stop_btn.grid(row=0, column=3, sticky='ew', padx=5, pady=2)
+        self.simple_open_serial_btn.grid(row=0, column=2, sticky='ew', padx=5, pady=2)
+        self.simple_start_btn.grid(row=0, column=3, sticky='ew', padx=5, pady=2)
+        self.simple_stop_btn.grid(row=0, column=4, sticky='ew', padx=5, pady=2)
 
         # Initially hide; _apply_view_mode will show/hide as appropriate
         self.simple_strategy_lbl.grid_remove()
         self.simple_strategy_combo.grid_remove()
+        self.simple_open_serial_btn.grid_remove()
         self.simple_start_btn.grid_remove()
         self.simple_stop_btn.grid_remove()
 
@@ -716,7 +741,7 @@ class SenxorApp(ttk.Frame):
             command=self._save_all_data,
             style='Primary.TButton',
         )
-        save_all_btn.grid(row=0, column=5, padx=5, pady=2, sticky='e')
+        save_all_btn.grid(row=0, column=6, padx=5, pady=2, sticky='e')
         Tooltip(save_all_btn, "Save trend graph data and all camera data to a dated folder.")
 
     def _save_all_data(self):
@@ -880,6 +905,7 @@ class SenxorApp(ttk.Frame):
         widgets = [
             self.simple_strategy_lbl,
             self.simple_strategy_combo,
+            self.simple_open_serial_btn,
             self.simple_start_btn,
             self.simple_stop_btn,
         ]
@@ -893,6 +919,7 @@ class SenxorApp(ttk.Frame):
         try:
             self.simple_start_btn.configure(state=self.control_panel.start_pid_btn['state'])
             self.simple_stop_btn.configure(state=self.control_panel.stop_pid_btn['state'])
+            self.simple_open_serial_btn.configure(state=self.control_panel.open_serial_btn['state'])
         except Exception:
             pass
 

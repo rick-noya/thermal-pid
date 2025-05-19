@@ -43,7 +43,7 @@ class ControlPanel(ttk.LabelFrame):
 
         # Row 1: Test Strategy
         ttk.Label(pid_params_frame, text="Test Strategy:", style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        self.test_strategy_var = tk.StringVar(value='Temperature Set Point')
+        self.test_strategy_var = tk.StringVar(value=config.DEFAULT_TEST_STRATEGY)
         self.TEST_STRATEGIES = ['Temperature Set Point', 'Voltage Step-Up to Set Point', 'Water Boil to Set Point']
         self.test_strategy_combo = ttk.Combobox(pid_params_frame, textvariable=self.test_strategy_var, values=self.TEST_STRATEGIES, state='readonly', width=25)
         self.test_strategy_combo.grid(row=1, column=1, sticky='ew', padx=5, pady=5)

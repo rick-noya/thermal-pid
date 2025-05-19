@@ -38,6 +38,12 @@ ui:
     # default_time_span: "24 Hours"
   # Added default view mode (simple / full)
   view_mode: "simple"
+  # Available test strategies:
+  # Uncomment ONE of the following lines to set the default test strategy:
+  # default_strategy: "Temperature Set Point"
+  # default_strategy: "Voltage Step-Up to Set Point"
+  default_strategy: "Water Boil to Set Point"
+  # default_strategy: "Temperature Set Point"
   smoothing:
     hot_len: 60
     cold_len: 60
