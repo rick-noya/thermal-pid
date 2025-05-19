@@ -96,9 +96,16 @@ main.py                # Entry point
 config.py              # Central configuration
 ui/                    # All UI components
   app.py               # Main application frame
-  control_panel.py     # PID & signal generator controls
+  control_panel/       # Modular control panel subcomponents
+    __init__.py
+    pid_controls.py    # PID parameter controls
+    signal_generator_controls.py # Signal generator controls
+    strategy_controls.py # Test strategy selection and logic
+    status_controls.py  # Status display and update logic
   heatmap_view.py      # Live image and overlays
   trend_graph.py       # Real-time graph
+  status_bar_view.py   # Status bar widget
+  utils.py             # UI utilities (e.g., Tooltip)
 controllers/           # PID controller logic
   pid_controller.py
 devices/               # Hardware wrappers
@@ -114,3 +121,7 @@ See `requirements.txt` for all dependencies.
 ## License
 
 MIT License (or specify your own)
+
+# Note for maintainers:
+
+The control panel logic has been refactored for modularity and maintainability. All new UI logic for PID, signal generator, test strategy, and status display should be added to the appropriate submodule in ui/control_panel/.

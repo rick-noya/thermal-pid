@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from tkinter import Canvas
-from .control_panel import ControlPanel
+from .control_panel import ControlPanel  # Refactored: now composes modular subcomponents
 from .heatmap_view import HeatmapView
 from .trend_graph import TrendGraph
 from .utils import Tooltip
