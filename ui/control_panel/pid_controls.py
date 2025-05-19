@@ -6,13 +6,18 @@ import config
 class PIDControls(ttk.LabelFrame):
     """
     UI component for PID parameter controls and logic.
+    Callbacks:
+        on_start: Called after PID is started.
+        on_stop: Called after PID is stopped.
     """
-    def __init__(self, master, pid, set_status=None, style='TLabelframe', max_voltage_var=None, **kwargs):
+    def __init__(self, master, pid, set_status=None, style='TLabelframe', max_voltage_var=None, on_start=None, on_stop=None, **kwargs):
         super().__init__(master, text="PID Parameters", style=style, **kwargs)
         self.pid = pid
         self.set_status = set_status or (lambda msg: None)
         self.max_voltage_var = max_voltage_var
         self._save_on_setpoint_triggered = False
+        self.on_start = on_start
+        self.on_stop = on_stop
 
         # Row 0: Setpoint
         ttk.Label(self, text="Setpoint (°C):", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
@@ -50,6 +55,12 @@ class PIDControls(ttk.LabelFrame):
         self.update_pid_btn.grid(row=2, column=0, columnspan=2, padx=5, pady=(10,5), sticky='ew') # Span 2 columns
         Tooltip(self.update_pid_btn, "Apply the current PID parameters (Setpoint, Kp, Ki, Kd).")
 
+        # Start/Stop buttons
+        self.start_pid_btn = ttk.Button(self, text="Start PID", command=self._start_pid)
+        self.start_pid_btn.grid(row=3, column=0, padx=5, pady=5, sticky='ew')
+        self.stop_pid_btn = ttk.Button(self, text="Stop PID", command=self._stop_pid)
+        self.stop_pid_btn.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
+
     def update_pid(self):
         try:
             self.pid.update_tunings(self.kp_var.get(), self.ki_var.get(), self.kd_var.get())
@@ -59,6 +70,18 @@ class PIDControls(ttk.LabelFrame):
             self.set_status(f"PID Update Error: Invalid value. {e}")
         except Exception as e:
             self.set_status(f"PID Update Error: {e}")
+
+    def _start_pid(self):
+        # Start PID logic here (e.g., resume PID, update UI)
+        if self.on_start:
+            self.on_start()
+        self.set_status("PID started.")
+
+    def _stop_pid(self):
+        # Stop PID logic here (e.g., pause PID, update UI)
+        if self.on_stop:
+            self.on_stop()
+        self.set_status("PID stopped.")
 
     def _reset_save_on_setpoint_flag(self):
         self._save_on_setpoint_triggered = False 

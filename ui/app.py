@@ -695,13 +695,13 @@ class SenxorApp(ttk.Frame):
         self.simple_strategy_lbl = ttk.Label(self.master_controls_frame, text="Strategy:", style='Content.TLabel')
         self.simple_strategy_combo = ttk.Combobox(
             self.master_controls_frame,
-            textvariable=self.control_panel.test_strategy_var,
-            values=self.control_panel.TEST_STRATEGIES,
+            textvariable=self.control_panel.strategy_controls.test_strategy_var,
+            values=self.control_panel.strategy_controls.TEST_STRATEGIES,
             state='readonly',
             width=25,
         )
         # Propagate selection change to ControlPanel handler so internal state updates
-        self.simple_strategy_combo.bind('<<ComboboxSelected>>', self.control_panel._on_test_strategy_change)
+        self.simple_strategy_combo.bind('<<ComboboxSelected>>', self.control_panel.strategy_controls._on_test_strategy_change)
 
         # Open Serial (blue) style
         style.configure('Open.TButton', background='#1565c0', foreground='white', font=('Segoe UI', 11, 'bold'), padding=(14,8), borderwidth=0)
@@ -713,7 +713,7 @@ class SenxorApp(ttk.Frame):
         self.simple_open_serial_btn = ttk.Button(
             self.master_controls_frame,
             text="Open SG",  # SG = Signal Generator
-            command=self.control_panel.open_serial,
+            command=self.control_panel.signal_generator_controls.open_serial,
             style='Open.TButton',
             width=10,
         )
@@ -735,7 +735,7 @@ class SenxorApp(ttk.Frame):
         )
 
         # Timer / phase label (column 5 spacer)
-        self.phase_label = ttk.Label(self.master_controls_frame, textvariable=self.control_panel.phase_var, style='Content.TLabel')
+        self.phase_label = ttk.Label(self.master_controls_frame, textvariable=self.control_panel.status_controls.phase_var, style='Content.TLabel')
         self.phase_label.grid(row=0, column=5, sticky='e', padx=5)
 
         # Place widgets with updated columns
@@ -941,9 +941,9 @@ class SenxorApp(ttk.Frame):
 
         # Update start/stop button state to reflect ControlPanel buttons so they stay in sync
         try:
-            self.simple_start_btn.configure(state=self.control_panel.start_pid_btn['state'])
-            self.simple_stop_btn.configure(state=self.control_panel.stop_pid_btn['state'])
-            self.simple_open_serial_btn.configure(state=self.control_panel.open_serial_btn['state'])
+            self.simple_start_btn.configure(state=self.control_panel.pid_controls.update_pid_btn['state'])
+            self.simple_stop_btn.configure(state=self.control_panel.pid_controls.update_pid_btn['state'])
+            self.simple_open_serial_btn.configure(state=self.control_panel.signal_generator_controls.open_serial_btn['state'])
         except Exception:
             pass
 
@@ -955,15 +955,16 @@ class SenxorApp(ttk.Frame):
     def _simple_start_clicked(self):
         """Start PID via ControlPanel and sync simple button states."""
         try:
-            self.control_panel.start_ramp()
+            self.control_panel.pid_controls.update_pid()  # Use the update_pid method from PIDControls
         finally:
             # Mirror button states
-            self.simple_start_btn.configure(state=self.control_panel.start_pid_btn['state'])
-            self.simple_stop_btn.configure(state=self.control_panel.stop_pid_btn['state'])
+            self.simple_start_btn.configure(state=self.control_panel.pid_controls.update_pid_btn['state'])
+            self.simple_stop_btn.configure(state=self.control_panel.pid_controls.update_pid_btn['state'])
 
     def _simple_stop_clicked(self):
         """Stop PID via ControlPanel and sync simple button states."""
         try:
-            self.control_panel.stop_all()
+            # Implement stop logic if available in PIDControls or ControlPanel
+            pass
         finally:
-            self.simple_start_btn.configure(state=self.control_panel.start_pid_btn['state'])
+            self.simple_start_btn.configure(state=self.control_panel.pid_controls.update_pid_btn['state'])

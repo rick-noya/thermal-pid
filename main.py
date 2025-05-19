@@ -133,7 +133,7 @@ def main():
         try:
             cp = app.control_panel
             phase = getattr(cp, '_current_phase_desc', 'Idle')
-            elapsed = cp.phase_var.get().split(': ', 1)[-1] if ': ' in cp.phase_var.get() else '00:00:00'
+            elapsed = cp.status_controls.phase_var.get().split(': ', 1)[-1] if ': ' in cp.status_controls.phase_var.get() else '00:00:00'
             cooling = (phase.lower() == 'cooling')
             cooling_down = cooling  # New field for display
             max_temp = None

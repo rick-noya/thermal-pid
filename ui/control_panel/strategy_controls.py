@@ -7,8 +7,10 @@ class StrategyControls(ttk.LabelFrame):
     """
     UI component for test strategy selection and logic (e.g., voltage step-up, water boil).
     Handles strategy selection, voltage step-up, and water boil parameters and logic.
+    Callback:
+        on_strategy_change: Called after the test strategy is changed.
     """
-    def __init__(self, master, pid, siggen, data_aggregator, set_status=None, style='TLabelframe', max_voltage_var=None, **kwargs):
+    def __init__(self, master, pid, siggen, data_aggregator, set_status=None, style='TLabelframe', max_voltage_var=None, on_strategy_change=None, **kwargs):
         super().__init__(master, text="Test Strategy", style=style, **kwargs)
         self.pid = pid
         self.siggen = siggen
@@ -16,6 +18,7 @@ class StrategyControls(ttk.LabelFrame):
         self.set_status = set_status or (lambda msg: None)
         self.max_voltage_var = max_voltage_var
         self._save_on_setpoint_triggered = False
+        self.on_strategy_change = on_strategy_change
 
         # Strategy selection
         ttk.Label(self, text="Test Strategy:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=5, pady=5)
@@ -85,4 +88,6 @@ class StrategyControls(ttk.LabelFrame):
         if strategy == 'Water Boil to Set Point':
             self.water_boil_params_frame.grid()
         else:
-            self.water_boil_params_frame.grid_remove() 
+            self.water_boil_params_frame.grid_remove()
+        if self.on_strategy_change:
+            self.on_strategy_change(strategy) 

@@ -11,12 +11,17 @@ class SignalGeneratorControls(ttk.LabelFrame):
     """
     UI component for signal generator controls and serial communication logic.
     Handles port selection, baud rate, frequency, voltage, raw commands, and open/close logic.
+    Callbacks:
+        on_open: Called after the serial port is opened.
+        on_close: Called after the serial port is closed.
     """
-    def __init__(self, master, siggen, set_status=None, style='TLabelframe', max_voltage_var=None, **kwargs):
+    def __init__(self, master, siggen, set_status=None, style='TLabelframe', max_voltage_var=None, on_open=None, on_close=None, **kwargs):
         super().__init__(master, text="Signal Generator", style=style, **kwargs)
         self.siggen = siggen
         self.set_status = set_status or (lambda msg: None)
         self.max_voltage_var = max_voltage_var
+        self.on_open = on_open
+        self.on_close = on_close
 
         # --- Get available COM ports ---
         available_ports = serial.tools.list_ports.comports()
@@ -135,6 +140,8 @@ class SignalGeneratorControls(ttk.LabelFrame):
             self.baud_entry.configure(state='disabled')
             self._toggle_sg_controls_enabled(True)
             logger.info("Signal Generator opened successfully on %s", self.siggen._port)
+            if self.on_open:
+                self.on_open()
         except Exception as e:
             error_msg = f"Error opening serial: {e}"
             self.set_status(error_msg)
@@ -159,6 +166,8 @@ class SignalGeneratorControls(ttk.LabelFrame):
             self.baud_entry.configure(state='normal')
             self._toggle_sg_controls_enabled(False)
             logger.info("Signal Generator serial port closed")
+            if self.on_close:
+                self.on_close()
         except Exception as e:
             error_msg = f"Error closing serial: {e}"
             self.set_status(error_msg)
