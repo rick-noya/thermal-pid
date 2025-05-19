@@ -36,6 +36,8 @@ ui:
     # default_time_span: "6 Hours"
     # default_time_span: "12 Hours"
     # default_time_span: "24 Hours"
+  # Added default view mode (simple / full)
+  view_mode: "simple"
   smoothing:
     hot_len: 60
     cold_len: 60

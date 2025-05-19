@@ -197,6 +197,17 @@ class SenxorApp(ttk.Frame):
             background=[('active', COLOR_SECONDARY_ACCENT), ('pressed', COLOR_PRIMARY_ACCENT)],
             relief=[('pressed', 'sunken'), ('!pressed', 'flat')])
         
+        # Distinct Start (green) and Stop (red) button styles
+        style.configure('Start.TButton', background='#2e7d32', foreground='white', font=('Segoe UI', 11, 'bold'), padding=(14, 8), borderwidth=0)
+        style.map('Start.TButton',
+            background=[('active', '#1b5e20'), ('pressed', '#66bb6a')],
+            relief=[('pressed', 'sunken'), ('!pressed', 'flat')])
+
+        style.configure('Stop.TButton', background='#c62828', foreground='white', font=('Segoe UI', 11, 'bold'), padding=(14, 8), borderwidth=0)
+        style.map('Stop.TButton',
+            background=[('active', '#b71c1c'), ('pressed', '#ef5350')],
+            relief=[('pressed', 'sunken'), ('!pressed', 'flat')])
+
         style.configure('Primary.TButton', background=COLOR_PRIMARY_ACCENT)
         style.map('Primary.TButton',
             background=[('active', COLOR_PRIMARY_ACCENT), ('pressed', COLOR_HIGHLIGHT)])
@@ -310,6 +321,10 @@ class SenxorApp(ttk.Frame):
         # This will place its controls_frame in self.camera_frame at row=0
         self._init_master_camera_controls(style)
 
+        # ---------------- Simple / Full view mode ----------------
+        # Track whether we are in simple (True) or full (False) mode
+        self.simple_view_enabled = tk.BooleanVar(value=(config.DEFAULT_VIEW_MODE.lower() == 'simple'))
+
         # Create a dedicated frame for the grid of camera views
         self.camera_grid_frame = ttk.Frame(self.camera_frame, style='Content.TFrame')
         self.camera_grid_frame.grid(row=1, column=0, sticky='nsew')
@@ -386,10 +401,15 @@ class SenxorApp(ttk.Frame):
         settings_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Settings", menu=settings_menu)
         settings_menu.add_command(label="Display Settings", command=self._open_settings_dialog) # Changed command
+        # Simple view toggle
+        settings_menu.add_checkbutton(label="Simple View Mode", variable=self.simple_view_enabled, command=self._apply_view_mode)
         # Add other settings options here as needed
         # For example:
         # settings_menu.add_separator()
         # settings_menu.add_command(label="Another Setting", command=self._another_setting_action)
+
+        # Apply initial view mode after UI is built
+        self.after(0, self._apply_view_mode)
 
     def _on_canvas_configure(self, event):
         """Dynamically set the width of the inner frame to match the canvas width."""
@@ -638,16 +658,65 @@ class SenxorApp(ttk.Frame):
         # It is placed in self.camera_frame at row=0.
 
         # controls_frame is parented to self.camera_frame (the overall container for this section)
-        controls_frame = ttk.Frame(self.camera_frame, style='Content.TFrame', padding=(5,5))
-        controls_frame.grid(row=0, column=0, sticky='ew', padx=5, pady=(5,0)) # pady bottom 0 to be close to grid
+        self.master_controls_frame = ttk.Frame(self.camera_frame, style='Content.TFrame', padding=(5,5))
+        self.master_controls_frame.grid(row=0, column=0, sticky='ew', padx=5, pady=(5,0)) # pady bottom 0 to be close to grid
 
-        # Configure layout - Make the snapshot button align to the right
-        controls_frame.columnconfigure(0, weight=1) # Empty space pushes button right
-        controls_frame.columnconfigure(1, weight=0) # Button takes needed space
+        # Configure layout – we'll reserve columns for simple controls plus spacer and save button
+        for idx in range(6):
+            weight = 1 if idx == 4 else 0  # column4 is the spacer that absorbs extra space
+            self.master_controls_frame.columnconfigure(idx, weight=weight)
 
-        # Save All Data button
-        save_all_btn = ttk.Button(controls_frame, text="Save All Data", command=self._save_all_data, style='Primary.TButton')
-        save_all_btn.grid(row=0, column=2, padx=5, pady=2, sticky='e')
+        # --- Simple-mode controls (initially hidden; shown via _apply_view_mode) ---
+        # Strategy label and combo reuse the ControlPanel variables so that behaviour stays consistent.
+        self.simple_strategy_lbl = ttk.Label(self.master_controls_frame, text="Strategy:", style='Content.TLabel')
+        self.simple_strategy_combo = ttk.Combobox(
+            self.master_controls_frame,
+            textvariable=self.control_panel.test_strategy_var,
+            values=self.control_panel.TEST_STRATEGIES,
+            state='readonly',
+            width=25,
+        )
+        # Propagate selection change to ControlPanel handler so internal state updates
+        self.simple_strategy_combo.bind('<<ComboboxSelected>>', self.control_panel._on_test_strategy_change)
+
+        # Start / Stop buttons that call through to ControlPanel methods
+        self.simple_start_btn = ttk.Button(
+            self.master_controls_frame,
+            text="Start PID",
+            command=self.control_panel.start_ramp,
+            style='Start.TButton',
+            width=10,
+        )
+        self.simple_stop_btn = ttk.Button(
+            self.master_controls_frame,
+            text="Stop PID",
+            command=self.control_panel.stop_all,
+            style='Stop.TButton',
+            width=10,
+        )
+
+        # Place widgets – default grid positions
+        self.simple_strategy_lbl.grid(row=0, column=0, sticky='w', padx=5, pady=2)
+        self.simple_strategy_combo.grid(row=0, column=1, sticky='w', padx=5, pady=2)
+        self.simple_start_btn.grid(row=0, column=2, sticky='ew', padx=5, pady=2)
+        self.simple_stop_btn.grid(row=0, column=3, sticky='ew', padx=5, pady=2)
+
+        # Initially hide; _apply_view_mode will show/hide as appropriate
+        self.simple_strategy_lbl.grid_remove()
+        self.simple_strategy_combo.grid_remove()
+        self.simple_start_btn.grid_remove()
+        self.simple_stop_btn.grid_remove()
+
+        # Spacer handled by column weight
+
+        # --- Save All Data button (always available) ---
+        save_all_btn = ttk.Button(
+            self.master_controls_frame,
+            text="Save All Data",
+            command=self._save_all_data,
+            style='Primary.TButton',
+        )
+        save_all_btn.grid(row=0, column=5, padx=5, pady=2, sticky='e')
         Tooltip(save_all_btn, "Save trend graph data and all camera data to a dated folder.")
 
     def _save_all_data(self):
@@ -785,3 +854,48 @@ class SenxorApp(ttk.Frame):
     def _manual_check_for_updates(self):
         from updater.update_client import client as auto_update
         auto_update.check_for_updates_async(parent=self.master, user_initiated=True) 
+
+    def _apply_view_mode(self):
+        """Show either simple or full UI based on self.simple_view_enabled."""
+        simple = self.simple_view_enabled.get()
+
+        # --- Toggle ControlPanel visibility ---
+        try:
+            if simple:
+                # Attempt to remove; ignore if already absent
+                try:
+                    self.top_paned.forget(self.control_panel)
+                except Exception:
+                    pass
+            else:
+                pane_ids = self.top_paned.panes()
+                if str(self.control_panel) not in pane_ids:
+                    # Insert at position 0 so split order remains CP | cameras
+                    self.top_paned.insert(0, self.control_panel)
+        except Exception:
+            # Safeguard against edge cases where paned window not ready yet
+            pass
+
+        # --- Simple controls visibility ---
+        widgets = [
+            self.simple_strategy_lbl,
+            self.simple_strategy_combo,
+            self.simple_start_btn,
+            self.simple_stop_btn,
+        ]
+        for w in widgets:
+            if simple:
+                w.grid()
+            else:
+                w.grid_remove()
+
+        # Update start/stop button state to reflect ControlPanel buttons so they stay in sync
+        try:
+            self.simple_start_btn.configure(state=self.control_panel.start_pid_btn['state'])
+            self.simple_stop_btn.configure(state=self.control_panel.stop_pid_btn['state'])
+        except Exception:
+            pass
+
+        # When returning to full view, restore sash proportion
+        if not simple:
+            self.after(100, self.set_initial_pane_proportions) 

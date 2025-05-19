@@ -175,11 +175,11 @@ class ControlPanel(ttk.LabelFrame):
         self.enable_pid_chk.grid(row=0, column=0, padx=5, pady=2, sticky='w')
         Tooltip(self.enable_pid_chk, "Enable or disable PID control operation.")
 
-        self.start_pid_btn = ttk.Button(actions_control_frame, text="Start PID", command=self.start_ramp, style='Primary.TButton')
+        self.start_pid_btn = ttk.Button(actions_control_frame, text="Start PID", command=self.start_ramp, style='Start.TButton')
         self.start_pid_btn.grid(row=0, column=1, padx=5, pady=2, sticky='ew')
         Tooltip(self.start_pid_btn, "Start PID control loop using selected source.")
 
-        self.stop_pid_btn = ttk.Button(actions_control_frame, text="Stop PID", command=self.stop_all, style='Primary.TButton')
+        self.stop_pid_btn = ttk.Button(actions_control_frame, text="Stop PID", command=self.stop_all, style='Stop.TButton')
         self.stop_pid_btn.grid(row=0, column=2, padx=5, pady=2, sticky='ew')
         Tooltip(self.stop_pid_btn, "Stop PID control and set output to 0V.")
         # Configure columns for button distribution
