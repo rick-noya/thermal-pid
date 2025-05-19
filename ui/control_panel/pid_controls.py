@@ -72,16 +72,32 @@ class PIDControls(ttk.LabelFrame):
             self.set_status(f"PID Update Error: {e}")
 
     def _start_pid(self):
-        # Start PID logic here (e.g., resume PID, update UI)
+        self.pid.resume()
+        # Optionally reset voltage on start (commented out, but can be enabled if desired)
+        # if hasattr(self.master, 'siggen') and self.master.siggen and hasattr(self.master.siggen, 'is_open') and self.master.siggen.is_open:
+        #     try:
+        #         self.master.siggen.set_voltage(0.0)
+        #     except Exception:
+        #         pass
         if self.on_start:
             self.on_start()
         self.set_status("PID started.")
+        self.start_pid_btn.configure(state='disabled')
+        self.stop_pid_btn.configure(state='normal')
 
     def _stop_pid(self):
-        # Stop PID logic here (e.g., pause PID, update UI)
+        self.pid.pause()
+        # Set output to 0V on stop for safety/clarity
+        if hasattr(self.master, 'siggen') and self.master.siggen and hasattr(self.master.siggen, 'is_open') and self.master.siggen.is_open:
+            try:
+                self.master.siggen.set_voltage(0.0)
+            except Exception:
+                pass
         if self.on_stop:
             self.on_stop()
         self.set_status("PID stopped.")
+        self.start_pid_btn.configure(state='normal')
+        self.stop_pid_btn.configure(state='disabled')
 
     def _reset_save_on_setpoint_flag(self):
         self._save_on_setpoint_triggered = False 

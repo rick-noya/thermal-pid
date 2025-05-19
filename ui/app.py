@@ -941,8 +941,8 @@ class SenxorApp(ttk.Frame):
 
         # Update start/stop button state to reflect ControlPanel buttons so they stay in sync
         try:
-            self.simple_start_btn.configure(state=self.control_panel.pid_controls.update_pid_btn['state'])
-            self.simple_stop_btn.configure(state=self.control_panel.pid_controls.update_pid_btn['state'])
+            self.simple_start_btn.configure(state=self.control_panel.pid_controls.start_pid_btn['state'])
+            self.simple_stop_btn.configure(state=self.control_panel.pid_controls.stop_pid_btn['state'])
             self.simple_open_serial_btn.configure(state=self.control_panel.signal_generator_controls.open_serial_btn['state'])
         except Exception:
             pass
@@ -955,16 +955,16 @@ class SenxorApp(ttk.Frame):
     def _simple_start_clicked(self):
         """Start PID via ControlPanel and sync simple button states."""
         try:
-            self.control_panel.pid_controls.update_pid()  # Use the update_pid method from PIDControls
+            self.control_panel.pid_controls._start_pid()  # Start PID via PIDControls
         finally:
             # Mirror button states
-            self.simple_start_btn.configure(state=self.control_panel.pid_controls.update_pid_btn['state'])
-            self.simple_stop_btn.configure(state=self.control_panel.pid_controls.update_pid_btn['state'])
+            self.simple_start_btn.configure(state=self.control_panel.pid_controls.start_pid_btn['state'])
+            self.simple_stop_btn.configure(state=self.control_panel.pid_controls.stop_pid_btn['state'])
 
     def _simple_stop_clicked(self):
         """Stop PID via ControlPanel and sync simple button states."""
         try:
-            # Implement stop logic if available in PIDControls or ControlPanel
-            pass
+            self.control_panel.pid_controls._stop_pid()
         finally:
-            self.simple_start_btn.configure(state=self.control_panel.pid_controls.update_pid_btn['state'])
+            self.simple_start_btn.configure(state=self.control_panel.pid_controls.start_pid_btn['state'])
+            self.simple_stop_btn.configure(state=self.control_panel.pid_controls.stop_pid_btn['state'])
