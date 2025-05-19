@@ -29,6 +29,7 @@ import time # Added for PID output update timestamp
 import math
 import numpy as np
 import config
+import serial.tools.list_ports
 
 
 class SettingsDialog(tk.Toplevel):
@@ -103,7 +104,26 @@ class SettingsDialog(tk.Toplevel):
         max_voltage_spin = ttk.Spinbox(settings_content_frame, from_=0.0, to=VOLTAGE_MAX_LIMIT, increment=0.1, textvariable=self.app.max_voltage_var, width=10)
         max_voltage_spin.grid(row=6, column=1, sticky='ew', padx=5, pady=5, columnspan=2)
         Tooltip(max_voltage_spin, f"Global maximum voltage for operations (default {max_voltage_default_tooltip}V, max {VOLTAGE_MAX_LIMIT}V).")
-        
+
+        # --- ESP32 Display Port Selection ---
+        available_ports = [p.device for p in serial.tools.list_ports.comports()]
+        esp32_default_port = getattr(config, 'ESP32_DISPLAY_SERIAL_PORT', 'COM21')
+        if not hasattr(self.app, 'esp32_display_port_var'):
+            self.app.esp32_display_port_var = tk.StringVar(value=esp32_default_port)
+        else:
+            if self.app.esp32_display_port_var.get() not in available_ports:
+                self.app.esp32_display_port_var.set(esp32_default_port)
+
+        ttk.Label(settings_content_frame, text='ESP32 Display Port:', style='Content.TLabel').grid(row=7, column=0, sticky='w', padx=5, pady=5)
+        esp32_port_combo = ttk.Combobox(settings_content_frame, textvariable=self.app.esp32_display_port_var, values=available_ports, state='readonly' if available_ports else 'disabled', width=15)
+        esp32_port_combo.grid(row=7, column=1, sticky='ew', padx=5, pady=5, columnspan=2)
+        Tooltip(esp32_port_combo, "Select the serial port for the ESP32 display (used for external display/monitoring).")
+
+        def on_esp32_port_change(*args):
+            # Optionally update config or trigger any logic needed
+            config.ESP32_DISPLAY_SERIAL_PORT = self.app.esp32_display_port_var.get()
+        self.app.esp32_display_port_var.trace_add('write', on_esp32_port_change)
+
         # --- Dialog Buttons ---
         button_frame = ttk.Frame(dialog_frame, style='Content.TFrame')
         button_frame.pack(fill='x', pady=(15,5), padx=5, side='bottom') # Pack at bottom

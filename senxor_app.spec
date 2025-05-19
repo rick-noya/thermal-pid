@@ -28,6 +28,7 @@ _hidden_imports = [
     'matplotlib.backends.backend_tkagg',
     'yaml',
     'packaging',
+    'crcmod',
 ]
 
 
