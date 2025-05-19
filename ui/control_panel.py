@@ -7,6 +7,7 @@ import serial.tools.list_ports
 import config
 import time
 import logging
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -17,13 +18,14 @@ from devices.camera_manager import CameraManager
 from devices.data_aggregator import DataAggregator
 
 class ControlPanel(ttk.LabelFrame):
-    def __init__(self, master, pid, siggen, camera_manager: CameraManager, data_aggregator: DataAggregator, set_status=None, style='TLabelframe', max_voltage_var=None, **kwargs):
+    def __init__(self, master, pid, siggen, camera_manager: CameraManager, data_aggregator: DataAggregator, set_status=None, style='TLabelframe', max_voltage_var=None, status_broadcaster=None, **kwargs):
         super().__init__(master, text="PID & Signal Generator Control", style=style, **kwargs)
         self.pid = pid
         self.siggen = siggen
         self.camera_manager = camera_manager
         self.data_aggregator = data_aggregator
-        self.set_status = set_status or (lambda msg: None) # Main app status
+        self.set_status = set_status or (lambda msg: None)
+        self.status_broadcaster = status_broadcaster
         self.columnconfigure(0, weight=1) # Make the main frame responsive
         self.max_voltage_var = max_voltage_var
         self._save_on_setpoint_triggered = False
@@ -298,6 +300,13 @@ class ControlPanel(ttk.LabelFrame):
         # the user starts the loop.
         self.stop_pid_btn.configure(state='disabled')
 
+        # ----- Timer / Phase State (UI label created by parent) -----
+        self.phase_var = tk.StringVar(value="Idle")
+        self._timer_after_id = None
+        self._test_start_time: float | None = None
+        self._cooling_start_time: float | None = None
+        self._current_phase_desc = "Idle"
+
     def _toggle_sg_controls_enabled(self, enabled: bool):
         state = 'normal' if enabled else 'disabled'
         for widget in self.sg_interactive_widgets:
@@ -406,10 +415,12 @@ class ControlPanel(ttk.LabelFrame):
         if not self.pid_enable_var.get():
             self.set_status("PID is disabled. Cannot start.")
             return
-        self.update_pid() # Ensure latest params are set before starting
+        self.update_pid()
         self._reset_save_on_setpoint_flag()
         strategy = self.test_strategy_var.get()
         logger.info("PID test started using strategy '%s' with setpoint %.2f°C", strategy, self.setpoint_var.get())
+        if self.status_broadcaster:
+            self.status_broadcaster.send_status("Test Started", "00:00:00", False, max_temp=None, cooling_down=False)
         if strategy == 'Temperature Set Point':
             self.pid.resume()
             self.set_status("PID control started (Temperature Set Point mode).")
@@ -417,6 +428,13 @@ class ControlPanel(ttk.LabelFrame):
             self.stop_pid_btn.configure(state='normal')
             self.enable_pid_chk.configure(state='disabled')
             self._log_trend_graph_event("PID Started")
+
+            # --- Timer init ---
+            self._test_start_time = time.time()
+            self._cooling_start_time = None
+            self._current_phase_desc = "Heating"
+            self._update_phase_timer("Heating", self._test_start_time)
+            self._timer_after_id = self.after(1000, self._timer_tick)
         elif strategy == 'Voltage Step-Up to Set Point':
             self.set_status("Starting Voltage Step-Up to Set Point strategy...")
             self.start_pid_btn.configure(state='disabled')
@@ -453,6 +471,16 @@ class ControlPanel(ttk.LabelFrame):
             self.set_status(f"PID stopped. SigGen error: {e}")
         # Log PID stop event
         self._log_trend_graph_event("PID Stopped")
+
+        # Switch to cooling timer phase
+        if self._test_start_time is not None and self._cooling_start_time is None:
+            self._cooling_start_time = time.time()
+            self._current_phase_desc = "Cooling"
+            self._update_phase_timer("Cooling", self._cooling_start_time)
+            self._timer_after_id = self.after(1000, self._cooling_timer_tick)
+
+        if self.status_broadcaster:
+            self.status_broadcaster.send_status("Cooling", "00:00:00", True, max_temp=None, cooling_down=True)
 
     def _check_serial_open(self):
         if not self.siggen.is_open:
@@ -708,6 +736,8 @@ class ControlPanel(ttk.LabelFrame):
                 self._save_on_setpoint_triggered = True
                 # Stop the test and set voltage to 0 after saving
                 app.after(100, self.stop_all)
+                if self.status_broadcaster:
+                    self.status_broadcaster.send_status("Cooling", "00:00:00", True, max_temp=None, cooling_down=True)
             else:
                 print("[PID] Could not find _save_all_data method on any parent.")
 
@@ -808,3 +838,25 @@ class ControlPanel(ttk.LabelFrame):
                     tg.log_event(description)
                 except Exception:
                     pass  # Do not interrupt UI flow if logging fails
+
+    # ---------------- Timer helpers -----------------
+    def _update_phase_timer(self, phase: str, start_time: float):
+        elapsed = timedelta(seconds=int(time.time() - start_time))
+        self._current_phase_desc = phase
+        self.phase_var.set(f"{phase}: {elapsed}")
+
+    def _timer_tick(self):
+        if self._test_start_time is not None:
+            self._update_phase_timer(self._current_phase_desc, self._test_start_time)
+            self._timer_after_id = self.after(1000, self._timer_tick)
+
+    def _start_cooling_phase(self):
+        self._cooling_start_time = time.time()
+        self._current_phase_desc = "Cooling"
+        self._update_phase_timer("Cooling", self._cooling_start_time)
+        self._timer_after_id = self.after(1000, self._cooling_timer_tick)
+
+    def _cooling_timer_tick(self):
+        if self._cooling_start_time is not None:
+            self._update_phase_timer(self._current_phase_desc, self._cooling_start_time)
+            self._timer_after_id = self.after(1000, self._cooling_timer_tick)

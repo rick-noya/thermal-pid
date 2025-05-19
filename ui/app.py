@@ -143,14 +143,14 @@ class SettingsDialog(tk.Toplevel):
 
 
 class SenxorApp(ttk.Frame):
-    def __init__(self, master, camera_manager: CameraManager, siggen, pid):
+    def __init__(self, master, camera_manager: CameraManager, siggen, pid, status_broadcaster=None):
         super().__init__(master)
         self.master = master
         self.camera_manager = camera_manager
         self.siggen = siggen
-        self.pid = pid # pid already has a reference to data_aggregator
-        # We need to pass camera_manager and the pid's data_aggregator to ControlPanel
-        self.data_aggregator = pid.data_aggregator # Get it from PID for consistency
+        self.pid = pid
+        self.status_broadcaster = status_broadcaster
+        self.data_aggregator = pid.data_aggregator
         if self.data_aggregator is None:
             # This case should ideally not happen if main.py sets it up correctly.
             # Fallback or error if PID wasn't given an aggregator.
@@ -319,7 +319,8 @@ class SenxorApp(ttk.Frame):
                                           data_aggregator=self.data_aggregator,
                                           set_status=status_update_method, 
                                           style='Content.TFrame',
-                                          max_voltage_var=self.max_voltage_var)
+                                          max_voltage_var=self.max_voltage_var,
+                                          status_broadcaster=self.status_broadcaster)
         
         # Camera Display Area Frame
         self.camera_frame = ttk.Frame(self.top_paned, style='Content.TFrame')
@@ -732,6 +733,10 @@ class SenxorApp(ttk.Frame):
             style='Stop.TButton',
             width=10,
         )
+
+        # Timer / phase label (column 5 spacer)
+        self.phase_label = ttk.Label(self.master_controls_frame, textvariable=self.control_panel.phase_var, style='Content.TLabel')
+        self.phase_label.grid(row=0, column=5, sticky='e', padx=5)
 
         # Place widgets with updated columns
         self.simple_strategy_lbl.grid(row=0, column=0, sticky='w', padx=5, pady=2)

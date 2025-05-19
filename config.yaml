@@ -81,3 +81,14 @@ camera_ports:
     name: "120 degrees"
   "2022.21.1.04617f":
     name: "240 degrees"
+
+esp32_display:
+  serial_port: "COM21" # Default serial port for the ESP32 display
+  baud_rate: 115200
+  max_temp_warning_threshold: 100.0 # Temperature in °C to trigger warning
+  # Display settings (for Arduino sketch reference, not directly used by Python app yet)
+  rotation: 1 # 0, 1, 2, or 3 for screen orientation
+  warn_font_size: 7
+  temp_font_warn_size: 4
+  temp_font_normal_size: 7
+  flash_interval_ms: 500

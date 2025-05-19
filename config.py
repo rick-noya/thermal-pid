@@ -263,6 +263,12 @@ def _apply_yaml(data: Dict[str, Any]) -> None:
         globals()["CAMERA_NAME_MAP"] = name_map
         globals()["CAMERA_SERIAL_ORDER"] = ordered_serials
 
+    # --- ESP32 Display Defaults ---
+    esp32_display_cfg = data.get("esp32_display", {})
+    globals()["ESP32_DISPLAY_SERIAL_PORT"] = str(esp32_display_cfg.get("serial_port", "COM21"))
+    globals()["ESP32_DISPLAY_BAUD_RATE"] = int(esp32_display_cfg.get("baud_rate", 115200))
+    globals()["ESP32_DISPLAY_MAX_TEMP_WARNING_THRESHOLD"] = float(esp32_display_cfg.get("max_temp_warning_threshold", 100.0))
+
 
 # ---------------------------------------------------------------------------
 # Public helper: reload()
