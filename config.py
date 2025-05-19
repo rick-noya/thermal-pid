@@ -216,6 +216,13 @@ def _apply_yaml(data: Dict[str, Any]) -> None:
     globals()["COLD_SMOOTH_LEN_DEFAULT"] = int(smoothing_cfg.get("cold_len", globals()["COLD_SMOOTH_LEN_DEFAULT"]))
     globals()["DEFAULT_COLORMAP"] = str(ui_cfg.get("default_colormap", globals()["DEFAULT_COLORMAP"]))
     globals()["MAX_VOLTAGE_DEFAULT"] = float(ui_cfg.get("max_voltage", globals()["MAX_VOLTAGE_DEFAULT"]))
+    # Ensure PID output limits upper bound reflects global max voltage unless overridden explicitly later
+    try:
+        v_limits_existing = PID_DEFAULTS.get("v_limits", (0.0, globals()["MAX_VOLTAGE_DEFAULT"]))
+        if isinstance(v_limits_existing, (list, tuple)) and len(v_limits_existing) == 2:
+            PID_DEFAULTS["v_limits"] = (float(v_limits_existing[0]), globals()["MAX_VOLTAGE_DEFAULT"])  # keep lower bound
+    except Exception:
+        pass
     globals()["SAVE_ON_SETPOINT_DEFAULT"] = bool(ui_cfg.get("save_on_setpoint_default", globals()["SAVE_ON_SETPOINT_DEFAULT"]))
     # View mode (simple/full)
     globals()["DEFAULT_VIEW_MODE"] = str(ui_cfg.get("view_mode", globals()["DEFAULT_VIEW_MODE"]))

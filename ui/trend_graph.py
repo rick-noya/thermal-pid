@@ -12,6 +12,8 @@ from zoneinfo import ZoneInfo # Requires Python 3.9+
 import matplotlib.dates as mdates
 from .utils import Tooltip # Import the shared Tooltip
 import config
+import logging
+logger = logging.getLogger(__name__)
 # import os # os was imported but not used
 
 # Default font for matplotlib to match app style
@@ -125,6 +127,10 @@ class TrendGraph(ttk.Frame):
         self.fig.autofmt_xdate() # Rotate date labels for better fit
 
         self.after_id = self.after(self.update_interval, self.update_graph)
+        logger.info("TrendGraph initialized.")
+
+        self.event_times: list[datetime] = []
+        self.event_descs: list[str] = []
 
     def on_timespan_change(self, event=None):
         self.current_time_span_seconds = self.time_span_options[self.time_span_var.get()]
@@ -137,6 +143,7 @@ class TrendGraph(ttk.Frame):
         self.min_data.append(min_temp)
         self.avg_data.append(avg_temp)
         self.voltage_data.append(voltage) # Store voltage
+        logger.debug("TrendGraph add_point: max=%s, min=%s, avg=%s, volt=%s", max_temp, min_temp, avg_temp, voltage)
 
     def update_graph(self):
         if not self.winfo_exists(): # Don't update if widget is destroyed
@@ -209,9 +216,12 @@ class TrendGraph(ttk.Frame):
         self.min_data.clear()
         self.avg_data.clear()
         self.voltage_data.clear() # Clear voltage data
+        self.event_times.clear()
+        self.event_descs.clear()
         # self.start_time = time.time() # Removed
         self.update_graph() # Redraw empty graph, which will now set axes based on current time
         self.set_status("Trend graph data cleared.")
+        logger.info("Trend graph data cleared by user.")
 
     def export_csv(self, sample_name: str | None = None, output_path: str | None = None):
         if not self.time_data:
@@ -233,17 +243,42 @@ class TrendGraph(ttk.Frame):
             csv_path = filename
 
         try:
+            # Build combined list of data and events for chronological export
+            combined: list[tuple[datetime, float | None, float | None, float | None, float | None, str]] = []
+            for dt_obj, mx, mn, av, v in zip(self.time_data, self.max_data, self.min_data, self.avg_data, self.voltage_data):
+                combined.append((dt_obj, mx, mn, av, v, ""))
+            for evt_dt, evt_desc in zip(self.event_times, self.event_descs):
+                combined.append((evt_dt, None, None, None, None, evt_desc))
+            # Sort all rows chronologically
+            combined.sort(key=lambda x: x[0])
+
             with open(csv_path, 'w', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow(['Timestamp (PST)', 'Max Temp (C)', 'Min Temp (C)', 'Avg Temp (C)', 'Voltage (V)']) # Updated header
-                for dt_obj, mx, mn, av, v in zip(self.time_data, self.max_data, self.min_data, self.avg_data, self.voltage_data):
-                    # Format datetime object to string including PST
+                writer.writerow(['Timestamp (PST)', 'Max Temp (C)', 'Min Temp (C)', 'Avg Temp (C)', 'Voltage (V)', 'Event'])
+                for dt_obj, mx, mn, av, v, evt in combined:
                     timestamp_str = dt_obj.strftime('%Y-%m-%d %H:%M:%S %Z')
-                    writer.writerow([timestamp_str, mx, mn, av, v]) # Write formatted timestamp
+                    writer.writerow([
+                        timestamp_str,
+                        "" if mx is None else mx,
+                        "" if mn is None else mn,
+                        "" if av is None else av,
+                        "" if v is None else v,
+                        evt
+                    ])
             self.set_status(f"Graph data exported to {csv_path}")
+            logger.info("Graph data exported successfully to %s", csv_path)
         except Exception as e:
             self.set_status(f"Export failed: {e}")
+            logger.exception("TrendGraph export_csv failed")
 
     def stop(self):
         if self.after_id:
             self.after_cancel(self.after_id)
+
+    # --- Event logging ---
+    def log_event(self, description: str):
+        """Record a textual event with current timestamp for later CSV export."""
+        ts = datetime.now(self.PST)
+        self.event_times.append(ts)
+        self.event_descs.append(description)
+        logger.info("TrendGraph event logged: %s", description)

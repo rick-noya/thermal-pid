@@ -8,6 +8,24 @@ from ui.app import SenxorApp
 import config
 import time
 from updater.update_client import client as auto_update
+import logging
+from logging.handlers import RotatingFileHandler
+import os
+
+# Setup logging (before application logic)
+logs_dir = os.path.join(os.path.dirname(__file__), "logs")
+os.makedirs(logs_dir, exist_ok=True)
+log_file_path = os.path.join(logs_dir, "application.log")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        RotatingFileHandler(log_file_path, maxBytes=1_000_000, backupCount=3),
+        logging.StreamHandler()
+    ],
+)
+logger = logging.getLogger(__name__)
+logger.info("Logging initialized. Log file: %s", log_file_path)
 
 def main():
     camera_manager = CameraManager()

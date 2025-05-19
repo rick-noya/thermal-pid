@@ -242,6 +242,17 @@ class SenxorApp(ttk.Frame):
         # Global Max Voltage
         self.max_voltage_var = tk.DoubleVar(value=config.MAX_VOLTAGE_DEFAULT)
 
+        def _propagate_max_voltage(*args):
+            try:
+                new_max = float(self.max_voltage_var.get())
+            except Exception:
+                return
+            # Update PID limits
+            if hasattr(self, 'pid') and self.pid:
+                min_out, _ = self.pid.output_limits
+                self.pid.output_limits = (min_out, new_max)
+        self.max_voltage_var.trace_add('write', _propagate_max_voltage)
+        
         # Trace smoothing changes to update heatmap views
         def _propagate_smoothing(*args):
             for hv in getattr(self, 'heatmap_views', []):
@@ -599,6 +610,10 @@ class SenxorApp(ttk.Frame):
             sample_name = self.heatmap_views[0].get_sample_number()
         
         if hasattr(self, 'trend_graph') and self.trend_graph:
+            try:
+                self.trend_graph.log_event("Save All Data")
+            except Exception:
+                pass  # Logging should not block save flow
             # Let TrendGraph handle sanitization and timestamp internally
             self.trend_graph.export_csv(sample_name=sample_name) 
 
@@ -706,14 +721,14 @@ class SenxorApp(ttk.Frame):
         self.simple_start_btn = ttk.Button(
             self.master_controls_frame,
             text="Start PID",
-            command=self.control_panel.start_ramp,
+            command=self._simple_start_clicked,
             style='Start.TButton',
             width=10,
         )
         self.simple_stop_btn = ttk.Button(
             self.master_controls_frame,
             text="Stop PID",
-            command=self.control_panel.stop_all,
+            command=self._simple_stop_clicked,
             style='Stop.TButton',
             width=10,
         )
@@ -754,14 +769,18 @@ class SenxorApp(ttk.Frame):
         os.makedirs(folder_name, exist_ok=True)
 
         # Save trend graph data
+        if hasattr(self, 'trend_graph') and self.trend_graph:
+            try:
+                self.trend_graph.log_event("Save All Data")
+            except Exception:
+                pass  # Logging should not block save flow
         try:
-            sample_name = self.sample_number_var.get().strip()
             raw_sample_name = self.sample_number_var.get().strip()
             sample_name_safe = raw_sample_name.replace(" ", "_").replace("/", "-") if raw_sample_name else ""
             # Use sanitized sample name in trend graph filename
             trend_graph_filename = f"{sample_name_safe}_trend_graph.csv" if sample_name_safe else "trend_graph.csv"
             trend_graph_path = os.path.join(folder_name, trend_graph_filename)
-            self.trend_graph.export_csv(sample_name=sample_name, output_path=trend_graph_path)
+            self.trend_graph.export_csv(sample_name=raw_sample_name, output_path=trend_graph_path)
         except Exception as e:
             messagebox.showerror("Save All Data", f"Failed to save trend graph data: {e}")
             return
@@ -926,3 +945,20 @@ class SenxorApp(ttk.Frame):
         # When returning to full view, restore sash proportion
         if not simple:
             self.after(100, self.set_initial_pane_proportions) 
+
+    # --- Simple view wrapper callbacks ---
+    def _simple_start_clicked(self):
+        """Start PID via ControlPanel and sync simple button states."""
+        try:
+            self.control_panel.start_ramp()
+        finally:
+            # Mirror button states
+            self.simple_start_btn.configure(state=self.control_panel.start_pid_btn['state'])
+            self.simple_stop_btn.configure(state=self.control_panel.stop_pid_btn['state'])
+
+    def _simple_stop_clicked(self):
+        """Stop PID via ControlPanel and sync simple button states."""
+        try:
+            self.control_panel.stop_all()
+        finally:
+            self.simple_start_btn.configure(state=self.control_panel.start_pid_btn['state'])

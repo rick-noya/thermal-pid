@@ -6,6 +6,9 @@ import os
 import serial.tools.list_ports
 import config
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir) # This gets the root of the project if ui is a subdir
@@ -320,6 +323,7 @@ class ControlPanel(ttk.LabelFrame):
         self.pid_agg_mode_combo.configure(state='readonly') # Always readonly, state not changed here
 
     def open_serial(self):
+        logger.info("Opening Signal Generator on port %s at %s baud", self.siggen._port or self.sg_port_var.get(), self.siggen._baud or self.sg_baud_var.get())
         self.siggen._port = self.sg_port_var.get() # Get port from Combobox variable
         self.siggen._baud = self.sg_baud_var.get()
         if not self.siggen._port:
@@ -349,14 +353,19 @@ class ControlPanel(ttk.LabelFrame):
             self.port_combo.configure(state='disabled') 
             self.baud_entry.configure(state='disabled')
             self._toggle_sg_controls_enabled(True)
+            logger.info("Signal Generator opened successfully on %s", self.siggen._port)
+            # Log event to trend graph
+            self._log_trend_graph_event("Signal Generator Opened")
         except Exception as e:
             error_msg = f"Error opening serial: {e}"
             self.set_status(error_msg) # Main status
             self.set_sg_status(error_msg) # SG status
             # Ensure sg controls remain disabled if open fails
             self._toggle_sg_controls_enabled(False)
+            logger.exception("Failed to open Signal Generator serial port")
 
     def close_serial(self):
+        logger.info("Closing Signal Generator serial port")
         self.set_sg_status("Closing serial port...")
         try:
             self.siggen.close()
@@ -372,10 +381,13 @@ class ControlPanel(ttk.LabelFrame):
                 self.port_combo.configure(state='disabled')
             self.baud_entry.configure(state='normal')
             self._toggle_sg_controls_enabled(False)
+            logger.info("Signal Generator serial port closed")
+            self._log_trend_graph_event("Signal Generator Closed")
         except Exception as e:
             error_msg = f"Error closing serial: {e}"
             self.set_status(error_msg)
             self.set_sg_status(error_msg)
+            logger.exception("Error while closing Signal Generator serial port")
 
     def update_pid(self):
         if not self.pid_enable_var.get(): # Check if PID is enabled
@@ -397,12 +409,14 @@ class ControlPanel(ttk.LabelFrame):
         self.update_pid() # Ensure latest params are set before starting
         self._reset_save_on_setpoint_flag()
         strategy = self.test_strategy_var.get()
+        logger.info("PID test started using strategy '%s' with setpoint %.2f°C", strategy, self.setpoint_var.get())
         if strategy == 'Temperature Set Point':
             self.pid.resume()
             self.set_status("PID control started (Temperature Set Point mode).")
             self.start_pid_btn.configure(state='disabled')
             self.stop_pid_btn.configure(state='normal')
             self.enable_pid_chk.configure(state='disabled')
+            self._log_trend_graph_event("PID Started")
         elif strategy == 'Voltage Step-Up to Set Point':
             self.set_status("Starting Voltage Step-Up to Set Point strategy...")
             self.start_pid_btn.configure(state='disabled')
@@ -417,6 +431,7 @@ class ControlPanel(ttk.LabelFrame):
             self.start_water_boil_strategy()
 
     def stop_all(self):
+        logger.info("PID test stopped by user.")
         self.pid.pause()
         self.set_status("PID control stopped.")
         # Potentially disable stop, enable start
@@ -436,6 +451,8 @@ class ControlPanel(ttk.LabelFrame):
                 self.set_status("PID stopped. SigGen output set to 0V.")
         except Exception as e:
             self.set_status(f"PID stopped. SigGen error: {e}")
+        # Log PID stop event
+        self._log_trend_graph_event("PID Stopped")
 
     def _check_serial_open(self):
         if not self.siggen.is_open:
@@ -616,6 +633,12 @@ class ControlPanel(ttk.LabelFrame):
         if self.data_aggregator:
             temp = self.data_aggregator.get_frames_for_pid(aggregation_mode=self._vsu_agg_mode)
         print(f"[VSU] Current temp: {temp}")
+        # Refresh maximum voltage in case user adjusted it in settings
+        if hasattr(self, 'max_voltage_var') and self.max_voltage_var is not None:
+            try:
+                self._vsu_max_voltage = self.max_voltage_var.get()
+            except Exception:
+                pass  # Keep previous value on error
         if temp is not None:
             self._vsu_temp_buffer.append(temp)
             if len(self._vsu_temp_buffer) > self._vsu_buffer_size:
@@ -771,3 +794,17 @@ class ControlPanel(ttk.LabelFrame):
                 self._boil_running = False
                 self.pid.update_setpoint(self.setpoint_var.get())
                 self.pid.resume()
+
+    # ----------------- Internal helper -----------------
+    def _log_trend_graph_event(self, description: str):
+        """Send an event description to the TrendGraph instance if reachable."""
+        parent = self.master
+        while parent is not None and not hasattr(parent, 'trend_graph'):
+            parent = getattr(parent, 'master', None)
+        if parent is not None and hasattr(parent, 'trend_graph'):
+            tg = getattr(parent, 'trend_graph')
+            if tg and hasattr(tg, 'log_event'):
+                try:
+                    tg.log_event(description)
+                except Exception:
+                    pass  # Do not interrupt UI flow if logging fails
