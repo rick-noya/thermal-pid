@@ -14,7 +14,7 @@ dist/
 MANIFEST
 
 # PyInstaller artifacts
-*.spec
+
 *.exe
 *.dll
 *.pyd
