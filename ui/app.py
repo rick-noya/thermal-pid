@@ -556,6 +556,13 @@ class SenxorApp(ttk.Frame):
         # Apply initial view mode after UI is built
         self.after(0, self._apply_view_mode)
 
+        # Set PID output limits to match max_voltage_var at startup
+        if hasattr(self, 'pid') and hasattr(self, 'max_voltage_var'):
+            try:
+                self.pid.output_limits = (0, float(self.max_voltage_var.get()))
+            except Exception:
+                self.pid.output_limits = (0, 5.5)  # fallback to config default
+
     def _on_canvas_configure(self, event):
         """Dynamically set the width of the inner frame to match the canvas width."""
         canvas_width = event.width
