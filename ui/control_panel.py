@@ -751,6 +751,7 @@ class ControlPanel(ttk.LabelFrame):
             while app is not None and not hasattr(app, '_save_all_data'):
                 app = getattr(app, 'master', None)
             if app is not None and hasattr(app, '_save_all_data'):
+                send_slack_update(f"Data captured at setpoint. Sample: {self.get_sample_name()}")
                 app.after(0, app._save_all_data)
                 self._save_on_setpoint_triggered = True
                 # Stop the test and set voltage to 0 after saving
