@@ -1,94 +1,57 @@
 camera:
+  default_port: COM9
   stream_fps: 15
-  default_port: "COM9"
-
-signal_generator:
-  port: "COM8"
-  baud: 115200
-  timeout: 1.0
-  default_frequency: 100000 # Hz
-  default_voltage: 1.0 # V
-
+camera_ports:
+  2021.46.1.034413:
+    name: Top
+  2022.21.1.04617f:
+    name: 240 degrees
+  2022.21.1.046709:
+    name: 120 degrees
+  2022.21.1.0467cc:
+    name: 0 degrees
+esp32_display:
+  baud_rate: 115200
+  flash_interval_ms: 500
+  max_temp_warning_threshold: 100.0
+  rotation: 1
+  serial_port: COM21
+  temp_font_normal_size: 7
+  temp_font_warn_size: 4
+  warn_font_size: 7
 pid:
-  kp: 4
-  ki: 0.0007
   kd: 0.0
-  setpoint: 200.0
-  v_limits: [0.0, 6.0]
+  ki: 0.0007
+  kp: 4
   sample_time: 0.1
-
-ui:
-  heatmap:
-    update_ms: 100 # Refresh rate for each camera heatmap
-  trend_graph:
-    update_ms: 500 # How often the aggregated trend graph redraws
-    # To change the default time span, uncomment ONE of the following lines and comment out the others.
-    # Only one default_time_span should be active at a time.
-
-    # default_time_span: "30 Seconds"
-    # default_time_span: "1 Minute" # Initial window selection in the combobox
-    # default_time_span: "2 Minutes"
-    # default_time_span: "5 Minutes"
-    default_time_span: "10 Minutes"
-    # default_time_span: "30 Minutes"
-    # default_time_span: "1 Hour"
-    # default_time_span: "2 Hours"
-    # default_time_span: "6 Hours"
-    # default_time_span: "12 Hours"
-    # default_time_span: "24 Hours"
-  # Added default view mode (simple / full)
-  view_mode: "simple"
-  # Available test strategies:
-  # Uncomment ONE of the following lines to set the default test strategy:
-  # default_strategy: "Temperature Set Point"
-  # default_strategy: "Voltage Step-Up to Set Point"
-  default_strategy: "Water Boil to Set Point"
-  # default_strategy: "Temperature Set Point"
-  smoothing:
-    hot_len: 60
-    cold_len: 60
-  max_voltage: 5.0
-  # Available colormaps:
-  # default_colormap: "Jet"
-  # default_colormap: "Hot"
-  default_colormap: "Magma"
-  # default_colormap: "Inferno"
-  # default_colormap: "Plasma"
-  # default_colormap: "Viridis"
-  # default_colormap: "Cividis"
-  # default_colormap: "Twilight"
-  # default_colormap: "Turbo"
-  # default_colormap: "Viridis"
-  save_on_setpoint_default: true
-
+  setpoint: 200.0
+signal_generator:
+  baud: 115200
+  default_frequency: 100000
+  default_voltage: 1.0
+  port: COM23
+  timeout: 1.0
 tests:
   vsu:
     initial_voltage: 1.0
-    step_size: 1.0
-    stabilization_window: 10.0 # seconds
-    stabilization_threshold: 3.0 # °C
     interval_ms: 100
+    stabilization_threshold: 3.0
+    stabilization_window: 10.0
+    step_size: 1.0
   water_boil:
-    boil_point: 150.0 # °C
-    boil_dwell: 120.0 # seconds
-
-camera_ports:
-  "2021.46.1.034413":
-    name: "Top"
-  "2022.21.1.0467cc":
-    name: "0 degrees"
-  "2022.21.1.046709":
-    name: "120 degrees"
-  "2022.21.1.04617f":
-    name: "240 degrees"
-
-esp32_display:
-  serial_port: "COM21" # Default serial port for the ESP32 display
-  baud_rate: 115200
-  max_temp_warning_threshold: 100.0 # Temperature in °C to trigger warning
-  # Display settings (for Arduino sketch reference, not directly used by Python app yet)
-  rotation: 1 # 0, 1, 2, or 3 for screen orientation
-  warn_font_size: 7
-  temp_font_warn_size: 4
-  temp_font_normal_size: 7
-  flash_interval_ms: 500
+    boil_dwell: 120.0
+    boil_point: 150.0
+ui:
+  default_colormap: Magma
+  default_strategy: Water Boil to Set Point
+  heatmap:
+    update_ms: 100
+  max_voltage: 5.5
+  save_on_setpoint_default: true
+  smoothing:
+    cold_len: 60
+    hot_len: 60
+  trend_graph:
+    default_time_span: 10 Minutes
+    update_ms: 500
+  view_mode: simple

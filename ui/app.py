@@ -100,6 +100,28 @@ class SettingsDialog(tk.Toplevel):
         max_voltage_spin.grid(row=6, column=1, sticky='ew', padx=5, pady=5, columnspan=2)
         Tooltip(max_voltage_spin, f"Global maximum voltage for operations (default {max_voltage_default_tooltip}V, max {VOLTAGE_MAX_LIMIT}V).")
 
+        # --- Signal Generator Port Selection ---
+        sg_available_ports = [p.device for p in serial.tools.list_ports.comports()]
+        sg_default_port = getattr(config, 'DEFAULT_PORT_SIGGEN', 'COM8')
+        if not hasattr(self.app, 'siggen_port_var'):
+            self.app.siggen_port_var = tk.StringVar()
+        # Set to config default if available, else first available
+        if sg_default_port in sg_available_ports:
+            self.app.siggen_port_var.set(sg_default_port)
+        elif sg_available_ports:
+            self.app.siggen_port_var.set(sg_available_ports[0])
+        else:
+            self.app.siggen_port_var.set('')
+
+        ttk.Label(settings_content_frame, text='Signal Generator Port:', style='Content.TLabel').grid(row=7, column=0, sticky='w', padx=5, pady=5)
+        sg_port_combo = ttk.Combobox(settings_content_frame, textvariable=self.app.siggen_port_var, values=sg_available_ports, state='readonly' if sg_available_ports else 'disabled', width=15)
+        sg_port_combo.grid(row=7, column=1, sticky='ew', padx=5, pady=5)
+        Tooltip(sg_port_combo, "Select the serial port for the signal generator (used for voltage/frequency output).")
+
+        def on_siggen_port_change(*args):
+            config.DEFAULT_PORT_SIGGEN = self.app.siggen_port_var.get()
+        self.app.siggen_port_var.trace_add('write', on_siggen_port_change)
+
         # --- ESP32 Display Port Selection ---
         def auto_detect_esp32_port():
             ch340_ports = []
@@ -137,9 +159,9 @@ class SettingsDialog(tk.Toplevel):
         else:
             self.app.esp32_display_port_var.set('')
 
-        ttk.Label(settings_content_frame, text='ESP32 Display Port:', style='Content.TLabel').grid(row=7, column=0, sticky='w', padx=5, pady=5)
+        ttk.Label(settings_content_frame, text='ESP32 Display Port:', style='Content.TLabel').grid(row=8, column=0, sticky='w', padx=5, pady=5)
         esp32_port_combo = ttk.Combobox(settings_content_frame, textvariable=self.app.esp32_display_port_var, values=available_ports, state='readonly' if available_ports else 'disabled', width=15)
-        esp32_port_combo.grid(row=7, column=1, sticky='ew', padx=5, pady=5)
+        esp32_port_combo.grid(row=8, column=1, sticky='ew', padx=5, pady=5)
         Tooltip(esp32_port_combo, "Select the serial port for the ESP32 display (used for external display/monitoring).")
 
         def on_autodetect():
@@ -151,7 +173,7 @@ class SettingsDialog(tk.Toplevel):
                 messagebox.showwarning("ESP32 Auto-Detect", "No ESP32 display detected. Please check the connection and try again.")
 
         autodetect_btn = ttk.Button(settings_content_frame, text="Auto-Detect", command=on_autodetect, width=12)
-        autodetect_btn.grid(row=7, column=2, padx=5, pady=5)
+        autodetect_btn.grid(row=8, column=2, padx=5, pady=5)
         Tooltip(autodetect_btn, "Automatically detect the ESP32 display port, prioritizing CH340-based devices (e.g., USB-SERIAL CH340).")
 
         def on_esp32_port_change(*args):
@@ -165,8 +187,56 @@ class SettingsDialog(tk.Toplevel):
         # Configure button_frame columns to push buttons to the right
         button_frame.columnconfigure(0, weight=1) # Empty space
 
+        def save_settings_to_yaml():
+            import yaml
+            import sys
+            import os
+            import tkinter.messagebox as messagebox
+            # Determine config.yaml path (handle PyInstaller frozen mode)
+            if getattr(sys, 'frozen', False):
+                # If running as a PyInstaller bundle
+                base_path = sys._MEIPASS if hasattr(sys, '_MEIPASS') else os.path.dirname(sys.executable)
+                config_path = os.path.join(os.path.dirname(sys.executable), 'config.yaml')
+            else:
+                config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../config.yaml')
+                config_path = os.path.abspath(config_path)
+            # Load existing YAML (if present)
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f) or {}
+            except Exception:
+                data = {}
+            # Update relevant fields
+            # Signal generator
+            data.setdefault('signal_generator', {})
+            data['signal_generator']['port'] = self.app.siggen_port_var.get()
+            # ESP32 display
+            data.setdefault('esp32_display', {})
+            data['esp32_display']['serial_port'] = self.app.esp32_display_port_var.get()
+            # Max voltage
+            data.setdefault('ui', {})
+            data['ui']['max_voltage'] = float(self.app.max_voltage_var.get())
+            # Colormap
+            data['ui']['default_colormap'] = self.app.colormap_var.get()
+            # Smoothing
+            data['ui'].setdefault('smoothing', {})
+            data['ui']['smoothing']['hot_len'] = int(self.app.hot_smooth_len_var.get())
+            data['ui']['smoothing']['cold_len'] = int(self.app.cold_smooth_len_var.get())
+            # Overlays (not in YAML, but could be added if desired)
+            # Save YAML
+            try:
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+                messagebox.showinfo("Settings Saved", f"Settings saved to {config_path}")
+            except Exception as e:
+                messagebox.showerror("Save Failed", f"Failed to save settings: {e}")
+
         ok_button = ttk.Button(button_frame, text="OK", command=self.destroy, style='Primary.TButton', width=10)
         ok_button.grid(row=0, column=1, padx=(5,0), pady=5, sticky='e')
+
+        save_button = ttk.Button(button_frame, text="Save", command=save_settings_to_yaml, style='TButton', width=10)
+        save_button.grid(row=0, column=0, padx=(5,0), pady=5, sticky='e')
+        Tooltip(save_button, "Save these settings as the new defaults for next launch.")
 
         cancel_button = ttk.Button(button_frame, text="Cancel", command=self.destroy, style='TButton', width=10)
         cancel_button.grid(row=0, column=2, padx=(5,0), pady=5, sticky='e')

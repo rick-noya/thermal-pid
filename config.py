@@ -65,7 +65,6 @@ PID_DEFAULTS: Dict[str, Any] = dict(
     ki=0.1,
     kd=0.05,
     setpoint=60.0,
-    v_limits=(0.0, 5.0),
     sample_time=0.1,
 )
 
@@ -187,16 +186,9 @@ def _apply_yaml(data: Dict[str, Any]) -> None:
     # PID section
     pid_cfg = data.get("pid", {})
     updated_pid_defaults: Dict[str, Any] = PID_DEFAULTS.copy()
-    for key in ("kp", "ki", "kd", "setpoint"):
+    for key in ("kp", "ki", "kd", "setpoint", "sample_time"):
         if key in pid_cfg:
             updated_pid_defaults[key] = float(pid_cfg[key])
-    if "v_limits" in pid_cfg:
-        v_limits_raw = pid_cfg["v_limits"]
-        # Accept list/tuple of len 2
-        if isinstance(v_limits_raw, (list, tuple)) and len(v_limits_raw) == 2:
-            updated_pid_defaults["v_limits"] = tuple(float(x) for x in v_limits_raw)
-    if "sample_time" in pid_cfg:
-        updated_pid_defaults["sample_time"] = float(pid_cfg["sample_time"])
     PID_DEFAULTS = updated_pid_defaults
 
     # UI section
@@ -216,13 +208,6 @@ def _apply_yaml(data: Dict[str, Any]) -> None:
     globals()["COLD_SMOOTH_LEN_DEFAULT"] = int(smoothing_cfg.get("cold_len", globals()["COLD_SMOOTH_LEN_DEFAULT"]))
     globals()["DEFAULT_COLORMAP"] = str(ui_cfg.get("default_colormap", globals()["DEFAULT_COLORMAP"]))
     globals()["MAX_VOLTAGE_DEFAULT"] = float(ui_cfg.get("max_voltage", globals()["MAX_VOLTAGE_DEFAULT"]))
-    # Ensure PID output limits upper bound reflects global max voltage unless overridden explicitly later
-    try:
-        v_limits_existing = PID_DEFAULTS.get("v_limits", (0.0, globals()["MAX_VOLTAGE_DEFAULT"]))
-        if isinstance(v_limits_existing, (list, tuple)) and len(v_limits_existing) == 2:
-            PID_DEFAULTS["v_limits"] = (float(v_limits_existing[0]), globals()["MAX_VOLTAGE_DEFAULT"])  # keep lower bound
-    except Exception:
-        pass
     globals()["SAVE_ON_SETPOINT_DEFAULT"] = bool(ui_cfg.get("save_on_setpoint_default", globals()["SAVE_ON_SETPOINT_DEFAULT"]))
     # View mode (simple/full)
     globals()["DEFAULT_VIEW_MODE"] = str(ui_cfg.get("view_mode", globals()["DEFAULT_VIEW_MODE"]))
