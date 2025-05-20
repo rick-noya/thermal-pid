@@ -18,7 +18,7 @@ from devices.camera_manager import CameraManager
 from devices.data_aggregator import DataAggregator
 
 class ControlPanel(ttk.LabelFrame):
-    def __init__(self, master, pid, siggen, camera_manager: CameraManager, data_aggregator: DataAggregator, set_status=None, style='TLabelframe', max_voltage_var=None, status_broadcaster=None, **kwargs):
+    def __init__(self, master, pid, siggen, camera_manager: CameraManager, data_aggregator: DataAggregator, set_status=None, style='TLabelframe', max_voltage_var=None, status_broadcaster=None, sample_number_var=None, **kwargs):
         super().__init__(master, text="PID & Signal Generator Control", style=style, **kwargs)
         self.pid = pid
         self.siggen = siggen
@@ -30,12 +30,23 @@ class ControlPanel(ttk.LabelFrame):
         self.max_voltage_var = max_voltage_var
         self._save_on_setpoint_triggered = False
 
+        self.sample_number_var = sample_number_var
+
         # Store available cameras for mapping display names to indices
         self._available_cameras_map = {}
 
+        # --- Sample Name Entry (Normal View) ---
+        self.sample_name_frame = ttk.Frame(self, style='Content.TFrame')
+        self.sample_name_frame.grid(row=0, column=0, sticky='ew', padx=5, pady=(0, 0))
+        self.sample_name_frame.columnconfigure(1, weight=1)
+        ttk.Label(self.sample_name_frame, text="Sample #:", style='Content.TLabel').grid(row=0, column=0, sticky='w', padx=(0, 5), pady=5)
+        self.sample_name_entry = ttk.Entry(self.sample_name_frame, textvariable=self.sample_number_var, width=20)
+        self.sample_name_entry.grid(row=0, column=1, sticky='ew', padx=(0, 5), pady=5)
+        Tooltip(self.sample_name_entry, "Identifier for the current sample/test run (used in snapshot filenames).")
+
         # --- PID Parameters Section ---
         pid_params_frame = ttk.LabelFrame(self, text="PID Parameters", style='TLabelframe', padding=(5,5))
-        pid_params_frame.grid(row=0, column=0, sticky='ew', padx=5, pady=5)
+        pid_params_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=5)
         pid_params_frame.columnconfigure(1, weight=1) # Give spinbox column more weight
 
         # Row 0: Setpoint
@@ -151,7 +162,7 @@ class ControlPanel(ttk.LabelFrame):
 
         # --- PID Input Source & Control Section ---
         pid_control_frame = ttk.LabelFrame(self, text="PID Input & Control", style='TLabelframe', padding=(5,5))
-        pid_control_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=(10,5)) # Grid in main panel now
+        pid_control_frame.grid(row=2, column=0, sticky='ew', padx=5, pady=(10,5)) # Grid in main panel now
         pid_control_frame.columnconfigure(1, weight=1) # Allow comboboxes/controls to expand
 
         # Row 0: Source Camera
@@ -197,7 +208,7 @@ class ControlPanel(ttk.LabelFrame):
 
         # --- Signal Generator Controls Section ---
         sg_frame = ttk.LabelFrame(self, text="Signal Generator", style='TLabelframe', padding=(5,5))
-        sg_frame.grid(row=2, column=0, sticky='ew', padx=5, pady=(10,5)) # Now row 2
+        sg_frame.grid(row=3, column=0, sticky='ew', padx=5, pady=(10,5)) # Now row 3
         sg_frame.columnconfigure(tuple(range(6)), weight=1, uniform="sg_uniform") # Allow responsive columns
 
         # --- Get available COM ports ---

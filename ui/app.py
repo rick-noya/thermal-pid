@@ -72,12 +72,6 @@ class SettingsDialog(tk.Toplevel):
         cmap_menu.grid(row=0, column=1, sticky='ew', padx=5, pady=5, columnspan=2) # Span to fill width
         Tooltip(cmap_menu, "Select the color palette for the thermal display.")
 
-        # Sample Number
-        ttk.Label(settings_content_frame, text='Sample #:', style='Content.TLabel').grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        sample_entry = ttk.Entry(settings_content_frame, textvariable=self.app.sample_number_var, width=20) # Increased width slightly
-        sample_entry.grid(row=1, column=1, sticky='ew', padx=5, pady=5, columnspan=2)
-        Tooltip(sample_entry, "Identifier for the current sample/test run (used in snapshot filenames).")
-
         # Smoothing sliders - Hot
         ttk.Label(settings_content_frame, text='Hot Spot Smooth (frames):', style='Content.TLabel').grid(row=2, column=0, sticky='w', padx=5, pady=5)
         hot_slider = ttk.Scale(settings_content_frame, from_=SMOOTH_MIN, to=SMOOTH_MAX, variable=self.app.hot_smooth_len_var, orient='horizontal', length=150)
@@ -380,7 +374,8 @@ class SenxorApp(ttk.Frame):
                                           set_status=status_update_method, 
                                           style='Content.TFrame',
                                           max_voltage_var=self.max_voltage_var,
-                                          status_broadcaster=self.status_broadcaster)
+                                          status_broadcaster=self.status_broadcaster,
+                                          sample_number_var=self.sample_number_var)
         
         # Camera Display Area Frame
         self.camera_frame = ttk.Frame(self.top_paned, style='Content.TFrame')
@@ -746,12 +741,17 @@ class SenxorApp(ttk.Frame):
         self.master_controls_frame.grid(row=0, column=0, sticky='ew', padx=5, pady=(5,0)) # pady bottom 0 to be close to grid
 
         # Configure layout – we'll reserve columns for simple controls plus spacer and save button
-        for idx in range(7):
-            weight = 1 if idx == 5 else 0  # column5 will act as spacer now
+        for idx in range(8):
+            weight = 1 if idx == 7 else 0  # column7 will act as spacer now
             self.master_controls_frame.columnconfigure(idx, weight=weight)
 
-        # --- Simple-mode controls (initially hidden; shown via _apply_view_mode) ---
-        # Strategy label and combo reuse the ControlPanel variables so that behaviour stays consistent.
+        # --- Sample Name Entry (Simple View) ---
+        self.simple_sample_lbl = ttk.Label(self.master_controls_frame, text="Sample #:", style='Content.TLabel')
+        self.simple_sample_entry = ttk.Entry(self.master_controls_frame, textvariable=self.sample_number_var, width=20)
+        Tooltip(self.simple_sample_entry, "Identifier for the current sample/test run (used in snapshot filenames).")
+        self.simple_sample_lbl.grid(row=0, column=0, sticky='w', padx=(5,2), pady=2)
+        self.simple_sample_entry.grid(row=0, column=1, sticky='w', padx=(2,5), pady=2)
+        # Shift strategy label/combo to columns 2/3, and other buttons rightward
         self.simple_strategy_lbl = ttk.Label(self.master_controls_frame, text="Strategy:", style='Content.TLabel')
         self.simple_strategy_combo = ttk.Combobox(
             self.master_controls_frame,
@@ -762,14 +762,8 @@ class SenxorApp(ttk.Frame):
         )
         # Propagate selection change to ControlPanel handler so internal state updates
         self.simple_strategy_combo.bind('<<ComboboxSelected>>', self.control_panel._on_test_strategy_change)
-
-        # Open Serial (blue) style
-        style.configure('Open.TButton', background='#1565c0', foreground='white', font=('Segoe UI', 11, 'bold'), padding=(14,8), borderwidth=0)
-        style.map('Open.TButton',
-            background=[('active', '#0d47a1'), ('pressed', '#42a5f5')],
-            relief=[('pressed', 'sunken'), ('!pressed', 'flat')])
-
-        # Open Serial button (simple view)
+        self.simple_strategy_lbl.grid(row=0, column=2, sticky='w', padx=5, pady=2)
+        self.simple_strategy_combo.grid(row=0, column=3, sticky='w', padx=5, pady=2)
         self.simple_open_serial_btn = ttk.Button(
             self.master_controls_frame,
             text="Open SG",  # SG = Signal Generator
@@ -777,8 +771,6 @@ class SenxorApp(ttk.Frame):
             style='Open.TButton',
             width=10,
         )
-
-        # Start / Stop buttons that call through to ControlPanel methods
         self.simple_start_btn = ttk.Button(
             self.master_controls_frame,
             text="Start PID",
@@ -793,25 +785,21 @@ class SenxorApp(ttk.Frame):
             style='Stop.TButton',
             width=10,
         )
-
-        # Timer / phase label (column 5 spacer)
         self.phase_label = ttk.Label(self.master_controls_frame, textvariable=self.control_panel.phase_var, style='Content.TLabel')
-        self.phase_label.grid(row=0, column=5, sticky='e', padx=5)
-
+        self.phase_label.grid(row=0, column=7, sticky='e', padx=5)
         # Place widgets with updated columns
-        self.simple_strategy_lbl.grid(row=0, column=0, sticky='w', padx=5, pady=2)
-        self.simple_strategy_combo.grid(row=0, column=1, sticky='w', padx=5, pady=2)
-        self.simple_open_serial_btn.grid(row=0, column=2, sticky='ew', padx=5, pady=2)
-        self.simple_start_btn.grid(row=0, column=3, sticky='ew', padx=5, pady=2)
-        self.simple_stop_btn.grid(row=0, column=4, sticky='ew', padx=5, pady=2)
-
+        self.simple_open_serial_btn.grid(row=0, column=4, sticky='ew', padx=5, pady=2)
+        self.simple_start_btn.grid(row=0, column=5, sticky='ew', padx=5, pady=2)
+        self.simple_stop_btn.grid(row=0, column=6, sticky='ew', padx=5, pady=2)
         # Initially hide; _apply_view_mode will show/hide as appropriate
+        self.simple_sample_lbl.grid_remove()
+        self.simple_sample_entry.grid_remove()
         self.simple_strategy_lbl.grid_remove()
         self.simple_strategy_combo.grid_remove()
         self.simple_open_serial_btn.grid_remove()
         self.simple_start_btn.grid_remove()
         self.simple_stop_btn.grid_remove()
-
+        self.phase_label.grid_remove()
         # Spacer handled by column weight
 
         # --- Save All Data button (always available) ---
@@ -821,7 +809,7 @@ class SenxorApp(ttk.Frame):
             command=self._save_all_data,
             style='Primary.TButton',
         )
-        save_all_btn.grid(row=0, column=6, padx=5, pady=2, sticky='e')
+        save_all_btn.grid(row=0, column=7, padx=5, pady=2, sticky='e')
         Tooltip(save_all_btn, "Save trend graph data and all camera data to a dated folder.")
 
     def _save_all_data(self):
@@ -987,6 +975,8 @@ class SenxorApp(ttk.Frame):
 
         # --- Simple controls visibility ---
         widgets = [
+            self.simple_sample_lbl,
+            self.simple_sample_entry,
             self.simple_strategy_lbl,
             self.simple_strategy_combo,
             self.simple_open_serial_btn,
