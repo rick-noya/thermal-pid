@@ -9,6 +9,9 @@ import time
 import logging
 from datetime import timedelta
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +21,12 @@ sys.path.insert(0, parent_dir)
 from devices.camera_manager import CameraManager
 from devices.data_aggregator import DataAggregator
 
-SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/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"
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL")
 
 def send_slack_update(message):
+    if not SLACK_WEBHOOK_URL:
+        print("Warning: SLACK_WEBHOOK_URL not set in environment. Slack message not sent.")
+        return
     payload = {"text": message}
     try:
         response = requests.post(SLACK_WEBHOOK_URL, json=payload)

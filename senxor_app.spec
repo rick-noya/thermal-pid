@@ -14,9 +14,10 @@ from pathlib import Path
 project_root = Path.cwd()
 pathex = [str(project_root)]
 
-# Include configuration YAML alongside executable
+# Include configuration YAML and .env alongside executable
 _datas = [
-    ('config.yaml', '.')
+    ('config.yaml', '.'),
+    ('.env', '.')
 ]
 
 # Hidden imports that PyInstaller may not detect automatically

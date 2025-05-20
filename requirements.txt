@@ -9,4 +9,5 @@ simple-pid
 pyyaml>=6.0
 packaging
 crcmod
-requests 
+requests
+python-dotenv 
