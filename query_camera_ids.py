@@ -87,6 +87,28 @@ def query_all_ports():
     else:
         print("\nNo Senxor/MI48 cameras with identifiable serial numbers found.")
 
+    # --- ESP32 Display Detection ---
+    print("\nScanning COM ports for ESP32 display devices...")
+    esp32_ports = []
+    for port_info in ports:
+        desc = (port_info.description or '').lower()
+        manu = (port_info.manufacturer or '').lower()
+        if (
+            'cp210' in desc or 'cp210' in manu or
+            'ch340' in desc or 'ch340' in manu or
+            'ftdi' in desc or 'ftdi' in manu or
+            'usb serial' in desc or 'usb-serial' in desc or
+            'esp32' in desc or 'esp32' in manu
+        ):
+            esp32_ports.append((port_info.device, port_info.description, port_info.manufacturer))
+    if esp32_ports:
+        print("\n--- ESP32 Display COM Ports Detected ---")
+        for device, description, manufacturer in esp32_ports:
+            print(f"  {device}: {description} | Manufacturer: {manufacturer}")
+        print("----------------------------------------")
+    else:
+        print("No ESP32 display devices detected on any COM port.")
+
 if __name__ == "__main__":
     # This is to ensure that if main.py (or other scripts) use 'if __name__ == "__main__"'
     # their code doesn't run when this script imports them.

@@ -30,6 +30,7 @@ import math
 import numpy as np
 import config
 import serial.tools.list_ports
+import tkinter.messagebox as messagebox
 
 
 class SettingsDialog(tk.Toplevel):
@@ -106,21 +107,60 @@ class SettingsDialog(tk.Toplevel):
         Tooltip(max_voltage_spin, f"Global maximum voltage for operations (default {max_voltage_default_tooltip}V, max {VOLTAGE_MAX_LIMIT}V).")
 
         # --- ESP32 Display Port Selection ---
+        def auto_detect_esp32_port():
+            ch340_ports = []
+            fallback_ports = []
+            for p in serial.tools.list_ports.comports():
+                desc = (p.description or '').lower()
+                manu = (p.manufacturer or '').lower()
+                if 'ch340' in desc or 'ch340' in manu:
+                    ch340_ports.append(p.device)
+                elif (
+                    'cp210' in desc or 'cp210' in manu or
+                    'ftdi' in desc or 'ftdi' in manu or
+                    'usb serial' in desc or 'usb-serial' in desc or
+                    'esp32' in desc or 'esp32' in manu
+                ):
+                    fallback_ports.append(p.device)
+            if ch340_ports:
+                return ch340_ports[0]
+            elif fallback_ports:
+                return fallback_ports[0]
+            return None
+
         available_ports = [p.device for p in serial.tools.list_ports.comports()]
         esp32_default_port = getattr(config, 'ESP32_DISPLAY_SERIAL_PORT', 'COM21')
+        autodetected_port = auto_detect_esp32_port()
         if not hasattr(self.app, 'esp32_display_port_var'):
-            self.app.esp32_display_port_var = tk.StringVar(value=esp32_default_port)
+            self.app.esp32_display_port_var = tk.StringVar()
+        # Prefer autodetected, then config, then first available
+        if autodetected_port:
+            self.app.esp32_display_port_var.set(autodetected_port)
+        elif esp32_default_port in available_ports:
+            self.app.esp32_display_port_var.set(esp32_default_port)
+        elif available_ports:
+            self.app.esp32_display_port_var.set(available_ports[0])
         else:
-            if self.app.esp32_display_port_var.get() not in available_ports:
-                self.app.esp32_display_port_var.set(esp32_default_port)
+            self.app.esp32_display_port_var.set('')
 
         ttk.Label(settings_content_frame, text='ESP32 Display Port:', style='Content.TLabel').grid(row=7, column=0, sticky='w', padx=5, pady=5)
         esp32_port_combo = ttk.Combobox(settings_content_frame, textvariable=self.app.esp32_display_port_var, values=available_ports, state='readonly' if available_ports else 'disabled', width=15)
-        esp32_port_combo.grid(row=7, column=1, sticky='ew', padx=5, pady=5, columnspan=2)
+        esp32_port_combo.grid(row=7, column=1, sticky='ew', padx=5, pady=5)
         Tooltip(esp32_port_combo, "Select the serial port for the ESP32 display (used for external display/monitoring).")
 
+        def on_autodetect():
+            port = auto_detect_esp32_port()
+            if port:
+                self.app.esp32_display_port_var.set(port)
+                messagebox.showinfo("ESP32 Auto-Detect", f"ESP32 display detected on port: {port}")
+            else:
+                messagebox.showwarning("ESP32 Auto-Detect", "No ESP32 display detected. Please check the connection and try again.")
+
+        autodetect_btn = ttk.Button(settings_content_frame, text="Auto-Detect", command=on_autodetect, width=12)
+        autodetect_btn.grid(row=7, column=2, padx=5, pady=5)
+        Tooltip(autodetect_btn, "Automatically detect the ESP32 display port, prioritizing CH340-based devices (e.g., USB-SERIAL CH340).")
+
         def on_esp32_port_change(*args):
-            # Optionally update config or trigger any logic needed
             config.ESP32_DISPLAY_SERIAL_PORT = self.app.esp32_display_port_var.get()
         self.app.esp32_display_port_var.trace_add('write', on_esp32_port_change)
 
