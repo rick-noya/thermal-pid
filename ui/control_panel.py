@@ -18,7 +18,7 @@ sys.path.insert(0, parent_dir)
 from devices.camera_manager import CameraManager
 from devices.data_aggregator import DataAggregator
 
-SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/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"
+SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/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"
 
 def send_slack_update(message):
     payload = {"text": message}

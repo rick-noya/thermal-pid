@@ -8,4 +8,5 @@ pyvisa
 simple-pid
 pyyaml>=6.0
 packaging
-crcmod 
+crcmod
+requests 

@@ -29,6 +29,7 @@ _hidden_imports = [
     'yaml',
     'packaging',
     'crcmod',
+    'requests',
 ]
 
 

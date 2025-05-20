@@ -29,7 +29,7 @@ signal_generator:
   baud: 115200
   default_frequency: 100000
   default_voltage: 1.0
-  port: COM23
+  port: COM15
   timeout: 1.0
 tests:
   vsu:

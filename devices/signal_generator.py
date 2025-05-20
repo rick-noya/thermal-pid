@@ -110,4 +110,22 @@ class SignalGenerator:
 
     @current_voltage.setter
     def current_voltage(self, v: float):
-        self._volt = v 
+        self._volt = v
+
+    def get_id(self) -> str:
+        """Query the signal generator for its unique serial number or identifier."""
+        if self._serial is None or not self._serial.is_open:
+            raise RuntimeError("Serial port not open – call open() first.")
+        # According to FY6xxx Python library and protocol, the command is 'IDN?' or 'getID'.
+        # Try both, as some firmware may differ. Prefer 'IDN?' if supported.
+        for cmd in ["IDN?", "getID", ":IDN?", ":getID", "*IDN?", "*idn?"]:
+            self._serial.reset_input_buffer()
+            self._serial.write(_make_cmd(cmd))
+            try:
+                response = self._serial.readline().decode(errors="ignore").strip()
+                if response and ("FY" in response or response.isalnum()):
+                    return response
+            except Exception:
+                continue
+        # If no response, return empty string
+        return "" 
