@@ -49,6 +49,8 @@ class ControlPanel(ttk.LabelFrame):
 
         self.slack_message_buffer = []
 
+        self._cooling_100c_notified = False  # Track if 100C notification sent
+
         # --- Sample Name Entry (Normal View) ---
         self.sample_name_frame = ttk.Frame(self, style='Content.TFrame')
         self.sample_name_frame.grid(row=0, column=0, sticky='ew', padx=5, pady=(0, 0))
@@ -447,7 +449,7 @@ class ControlPanel(ttk.LabelFrame):
         self._current_phase_desc = "Test Started"
         if self.status_broadcaster:
             self.status_broadcaster.send_status("Test Started", "00:00:00", False, max_temp=None, cooling_down=False)
-        self.buffer_slack_update(f"Test started! Sample: {self.get_sample_name()}")
+        send_slack_update(f"Test started! Sample: {self.get_sample_name()}")
         if strategy == 'Temperature Set Point':
             self.pid.resume()
             self.set_status("PID control started (Temperature Set Point mode).")
@@ -497,8 +499,7 @@ class ControlPanel(ttk.LabelFrame):
             self._start_cooling_phase()
         if self.status_broadcaster:
             self.status_broadcaster.send_status("Cooling", "00:00:00", True, max_temp=None, cooling_down=True)
-        self.buffer_slack_update(f"Test ended. Cooling phase started. Sample: {self.get_sample_name()}")
-        self.send_batched_slack_updates()
+        send_slack_update(f"Test ended. Cooling phase started. Sample: {self.get_sample_name()}")
 
     def _check_serial_open(self):
         if not self.siggen.is_open:
@@ -770,7 +771,7 @@ class ControlPanel(ttk.LabelFrame):
 
     def start_water_boil_strategy(self):
         print("[WATER BOIL] Starting water boil strategy...")
-        self.buffer_slack_update(f"Water boil phase started. Sample: {self.get_sample_name()}")
+        send_slack_update(f"Water boil phase started. Sample: {self.get_sample_name()}")
         self._boil_point = self.water_boil_point_var.get()
         self._boil_dwell = self.water_boil_dwell_var.get()
         self._boil_stab_window = self.water_boil_stab_window_var.get()
@@ -799,7 +800,7 @@ class ControlPanel(ttk.LabelFrame):
         if self._boil_phase == 'heatup':
             if temp is not None and temp >= self._boil_point:
                 print(f"[WATER BOIL] Boil point reached: {temp} >= {self._boil_point}")
-                self.buffer_slack_update(f"Boil point reached at {temp:.2f}°C. Stabilizing. Sample: {self.get_sample_name()}")
+                send_slack_update(f"Boil point reached at {temp:.2f}°C. Stabilizing. Sample: {self.get_sample_name()}")
                 self._boil_phase = 'stabilize'
                 self._boil_temp_buffer = []
                 self.set_status(f"Boil point reached. Stabilizing for {self._boil_stab_window}s...")
@@ -819,7 +820,7 @@ class ControlPanel(ttk.LabelFrame):
                     stabilized = True
             if stabilized:
                 print("[WATER BOIL] Temperature stabilized. Starting dwell phase.")
-                self.buffer_slack_update(f"Temperature stabilized at {temp:.2f}°C. Dwell phase started. Sample: {self.get_sample_name()}")
+                send_slack_update(f"Temperature stabilized at {temp:.2f}°C. Dwell phase started. Sample: {self.get_sample_name()}")
                 self.set_status(f"Stabilized at {temp:.2f}°C. Dwell for {self._boil_dwell}s...")
                 self._boil_phase = 'dwell'
                 self._boil_start_time = time.time()
@@ -841,7 +842,7 @@ class ControlPanel(ttk.LabelFrame):
                 self.after(self._boil_interval_ms, self._water_boil_loop)
             else:
                 print("[WATER BOIL] Dwell complete. Switching to user setpoint PID control.")
-                self.buffer_slack_update(f"Boil dwell complete. Data captured and switching to user setpoint PID control. Sample: {self.get_sample_name()}")
+                send_slack_update(f"Boil dwell complete. Data captured and switching to user setpoint PID control. Sample: {self.get_sample_name()}")
                 self.set_status("Boil dwell complete. Switching to user setpoint PID control.")
                 self._boil_running = False
                 self.pid.update_setpoint(self.setpoint_var.get())
@@ -877,20 +878,20 @@ class ControlPanel(ttk.LabelFrame):
         self._current_phase_desc = "Cooling"
         self._update_phase_timer("Cooling", self._cooling_start_time)
         self._timer_after_id = self.after(1000, self._cooling_timer_tick)
+        self._cooling_100c_notified = False  # Reset notification flag at start
 
     def _cooling_timer_tick(self):
         if self._cooling_start_time is not None:
             self._update_phase_timer(self._current_phase_desc, self._cooling_start_time)
+            # --- Check for 100C notification ---
+            temp = None
+            if self.data_aggregator:
+                agg_mode = getattr(self.pid, 'pid_aggregation_mode', 'average_mean')
+                temp = self.data_aggregator.get_frames_for_pid(aggregation_mode=agg_mode)
+            if temp is not None and not self._cooling_100c_notified and temp <= 100.0:
+                send_slack_update(f"Sample has cooled to 100°C. Sample: {self.get_sample_name()}")
+                self._cooling_100c_notified = True
             self._timer_after_id = self.after(1000, self._cooling_timer_tick)
-
-    def buffer_slack_update(self, message):
-        self.slack_message_buffer.append(message)
-
-    def send_batched_slack_updates(self):
-        if self.slack_message_buffer:
-            combined_message = "\n".join(self.slack_message_buffer)
-            send_slack_update(combined_message)
-            self.slack_message_buffer = []
 
     def get_sample_name(self):
         if self.sample_number_var is not None:

@@ -893,9 +893,14 @@ class SenxorApp(ttk.Frame):
         import os
         import time
         from tkinter import messagebox
-        # Create a folder with the current date and time
+        # Create a folder with the current date, time, and sample name
         timestamp = time.strftime('%Y%m%d-%H%M%S')
-        folder_name = f"capture_{timestamp}"
+        raw_sample_name = self.sample_number_var.get().strip() if hasattr(self, 'sample_number_var') else ''
+        sample_name_safe = raw_sample_name.replace(' ', '_').replace('/', '-') if raw_sample_name else ''
+        if sample_name_safe:
+            folder_name = f"capture_{timestamp}_{sample_name_safe}"
+        else:
+            folder_name = f"capture_{timestamp}"
         os.makedirs(folder_name, exist_ok=True)
 
         # Save trend graph data
