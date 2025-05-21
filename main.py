@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+from pathlib import Path
+import sys
 import tkinter as tk
 from tkinter import messagebox
 from devices.camera_manager import CameraManager
@@ -28,6 +31,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logger.info("Logging initialized. Log file: %s", log_file_path)
+
+# Robust .env loading: if running as a PyInstaller bundle (sys.frozen),
+# load .env that was packaged alongside the executable; otherwise, load
+# the normal .env from current working directory (or parent dirs).
+if getattr(sys, 'frozen', False):
+    # Running from a PyInstaller bundle – .env is next to the executable
+    exe_dir = Path(sys.executable).resolve().parent
+    env_path = exe_dir / '.env'
+    load_dotenv(env_path, override=False)
+else:
+    # Development / normal run – default dotenv search
+    load_dotenv()
 
 # --- SerialStatusBroadcaster: Sends status to ESP32 display over serial ---
 class SerialStatusBroadcaster:

@@ -10,4 +10,6 @@ pyyaml>=6.0
 packaging
 crcmod
 requests
-python-dotenv 
+python-dotenv
+supabase-py>=2.0.0
+supabase 
