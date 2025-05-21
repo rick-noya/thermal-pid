@@ -34,6 +34,7 @@ import tkinter.messagebox as messagebox
 from persistence import get_repo
 from datetime import datetime
 from persistence.utils import run_in_background
+import logging
 
 
 class SettingsDialog(tk.Toplevel):
@@ -751,8 +752,151 @@ class SenxorApp(ttk.Frame):
                 self.trend_graph.log_event("Save All Data")
             except Exception:
                 pass  # Logging should not block save flow
-            # Let TrendGraph handle sanitization and timestamp internally
-            self.trend_graph.export_csv(sample_name=sample_name) 
+            # Build all_rows for trend data
+            all_rows = []
+            if hasattr(self, 'trend_graph') and self.trend_graph:
+                for dt_obj, mx, mn, av, v in zip(
+                    self.trend_graph.time_data,
+                    self.trend_graph.max_data,
+                    self.trend_graph.min_data,
+                    self.trend_graph.avg_data,
+                    self.trend_graph.voltage_data
+                ):
+                    all_rows.append({
+                        "ts": dt_obj.isoformat() if hasattr(dt_obj, 'isoformat') else dt_obj,
+                        "max": mx,
+                        "min": mn,
+                        "avg": av,
+                        "voltage": v,
+                        "sample_name": sample_name or None,
+                        "sample_id": self.repo.get_sample_id_by_name(sample_name)
+                    })
+            try:
+                # Use sanitized sample name in trend graph filename
+                trend_graph_filename = f"{sample_name}_trend_graph.csv" if sample_name else "trend_graph.csv"
+                trend_graph_path = os.path.join(os.getcwd(), trend_graph_filename)
+                logging.info(f"Calling export_csv with sample_name={sample_name}, output_path={trend_graph_path}, all_rows={all_rows}")
+                logging.info(f"TrendGraph.export_csv signature: {self.trend_graph.export_csv.__code__.co_varnames}")
+                self.trend_graph.export_csv(sample_name=sample_name, output_path=trend_graph_path)
+                self.set_status("Uploading trend data to Supabase bucket…")
+                # Upload the CSV to the 'joule-heat-charts' bucket
+                dest_key = trend_graph_filename
+                def on_trend_upload_done(fut):
+                    exc = fut.exception()
+                    if exc:
+                        messagebox.showerror("Save All Data", f"Failed to upload trend graph CSV: {exc}")
+                        self.set_status("Trend data upload failed.")
+                    else:
+                        self.set_status("Trend data uploaded to Supabase bucket.")
+                fut = run_in_background(self.repo.upload_trend_csv, trend_graph_path, dest_key)
+                fut.add_done_callback(on_trend_upload_done)
+            except Exception as e:
+                logging.exception(f"Exception in export_csv: {e}")
+                messagebox.showerror("Save All Data", f"Failed to export or upload trend graph data: {e}")
+                self.set_status("Trend data export/upload failed.")
+                return
+
+            # --- Save heatmap arrays to Supabase (non-blocking) ---
+            heatmap_rows = []
+            for i, hv in enumerate(self.heatmap_views):
+                if hv.last_frame is None:
+                    continue
+                # Get camera friendly name
+                camera_name = None
+                serial_number = None
+                if hasattr(hv.camera, 'mi48') and hv.camera.mi48:
+                    serial_number = getattr(hv.camera.mi48, 'camera_id_hexsn', None) or getattr(hv.camera.mi48, 'sn', None)
+                if serial_number:
+                    camera_name = getattr(config, 'CAMERA_NAME_MAP', {}).get(serial_number, None)
+                if not camera_name:
+                    camera_name = f"Camera{i+1}"
+                heatmap_row = {
+                    "ts": datetime.utcnow().isoformat(),
+                    "sample_id": self.repo.get_sample_id_by_name(sample_name),
+                    "camera_id": camera_name,
+                    "heatmap": hv.last_frame.flatten().tolist(),
+                    "dims": hv.last_frame.shape,
+                    "aggregation_mode": "raw",
+                    "metadata": None
+                }
+                heatmap_rows.append(heatmap_row)
+            if heatmap_rows:
+                self.set_status("Saving heatmaps to Supabase…")
+                def on_heatmap_done(fut):
+                    exc = fut.exception()
+                    if exc:
+                        messagebox.showerror("Save All Data", f"Failed to save heatmaps: {exc}")
+                        self.set_status("Heatmap save failed.")
+                    else:
+                        self.set_status("Heatmaps saved.")
+                fut = run_in_background(self.repo.save_heatmaps, heatmap_rows)
+                fut.add_done_callback(on_heatmap_done)
+
+            # Save all camera snapshots
+            num_saved = 0
+            failed_cams = []
+            failed_msgs = []
+            if not self.heatmap_views:
+                messagebox.showerror("Save All Data", "No active cameras found.")
+                return
+            orig_cwd = os.getcwd()
+            try:
+                os.chdir(os.path.dirname(trend_graph_path))
+                snapshot_rows = []
+                for i, hv in enumerate(self.heatmap_views):
+                    # Get camera friendly name
+                    camera_name = None
+                    serial_number = None
+                    if hasattr(hv.camera, 'mi48') and hv.camera.mi48:
+                        serial_number = getattr(hv.camera.mi48, 'camera_id_hexsn', None) or getattr(hv.camera.mi48, 'sn', None)
+                    if serial_number:
+                        camera_name = getattr(config, 'CAMERA_NAME_MAP', {}).get(serial_number, None)
+                    if not camera_name:
+                        camera_name = f"Camera{i+1}"
+                    camera_name_safe = camera_name.replace(" ", "_").replace("/", "-")
+                    try:
+                        orig_sample = hv.sample_number_var.get()
+                        hv.sample_number_var.set(f"{sample_name}" if sample_name else "snapshot")
+                        hv.save_snapshot()
+                        # Add snapshot row for Supabase
+                        snapshot_rows.append({
+                            "ts": datetime.utcnow().isoformat(),
+                            "sample_id": self.repo.get_sample_id_by_name(sample_name),
+                            "camera_id": camera_name,
+                            "file_type": "png",
+                            "local_path": f"{sample_name}_{camera_name_safe}.png"
+                        })
+                        snapshot_rows.append({
+                            "ts": datetime.utcnow().isoformat(),
+                            "sample_id": self.repo.get_sample_id_by_name(sample_name),
+                            "camera_id": camera_name,
+                            "file_type": "csv",
+                            "local_path": f"{sample_name}_{camera_name_safe}.csv"
+                        })
+                        hv.sample_number_var.set(orig_sample)
+                        num_saved += 1
+                    except Exception as e:
+                        failed_cams.append(camera_name_safe)
+                        failed_msgs.append(f"{camera_name_safe}: {e}")
+                if snapshot_rows:
+                    self.set_status("Saving snapshots to Supabase…")
+                    def on_snapshots_done(fut):
+                        exc = fut.exception()
+                        if exc:
+                            messagebox.showerror("Save All Data", f"Failed to save snapshots: {exc}")
+                            self.set_status("Snapshot save failed.")
+                        else:
+                            self.set_status("Snapshots saved.")
+                    fut = run_in_background(self.repo.save_snapshots, snapshot_rows)
+                    fut.add_done_callback(on_snapshots_done)
+                if num_saved > 0 and not failed_cams:
+                    messagebox.showinfo("Save All Data", f"Trend graph, heatmaps, and all camera snapshots saved in '{os.path.dirname(trend_graph_path)}'.")
+                elif num_saved > 0 and failed_cams:
+                    messagebox.showwarning("Save All Data", f"Trend graph, heatmaps, and some camera snapshots saved in '{os.path.dirname(trend_graph_path)}'. Failed for: {', '.join(failed_cams)}.\n{chr(10).join(failed_msgs)}")
+                elif failed_cams:
+                    messagebox.showerror("Save All Data", f"Failed to save camera snapshots: {', '.join(failed_cams)}.\n{chr(10).join(failed_msgs)}")
+            finally:
+                os.chdir(orig_cwd)
 
     def refresh_camera_views(self):
         """Trigger a refresh of the camera display. Safe to call from non-UI threads."""
@@ -921,24 +1065,48 @@ class SenxorApp(ttk.Frame):
                 self.trend_graph.log_event("Save All Data")
             except Exception:
                 pass  # Logging should not block save flow
+        # Build all_rows for trend data
+        all_rows = []
+        if hasattr(self, 'trend_graph') and self.trend_graph:
+            for dt_obj, mx, mn, av, v in zip(
+                self.trend_graph.time_data,
+                self.trend_graph.max_data,
+                self.trend_graph.min_data,
+                self.trend_graph.avg_data,
+                self.trend_graph.voltage_data
+            ):
+                all_rows.append({
+                    "ts": dt_obj.isoformat() if hasattr(dt_obj, 'isoformat') else dt_obj,
+                    "max": mx,
+                    "min": mn,
+                    "avg": av,
+                    "voltage": v,
+                    "sample_name": raw_sample_name or None,
+                    "sample_id": sample_id
+                })
         try:
             # Use sanitized sample name in trend graph filename
             trend_graph_filename = f"{sample_name_safe}_trend_graph.csv" if sample_name_safe else "trend_graph.csv"
             trend_graph_path = os.path.join(folder_name, trend_graph_filename)
+            logging.info(f"Calling export_csv with sample_name={raw_sample_name}, output_path={trend_graph_path}, all_rows={all_rows}")
+            logging.info(f"TrendGraph.export_csv signature: {self.trend_graph.export_csv.__code__.co_varnames}")
             self.trend_graph.export_csv(sample_name=raw_sample_name, output_path=trend_graph_path)
-            self.set_status("Saving trend data to Supabase…")
-            def on_trend_done(fut):
+            self.set_status("Uploading trend data to Supabase bucket…")
+            # Upload the CSV to the 'joule-heat-charts' bucket
+            dest_key = trend_graph_filename
+            def on_trend_upload_done(fut):
                 exc = fut.exception()
                 if exc:
-                    messagebox.showerror("Save All Data", f"Failed to save trend graph data: {exc}")
-                    self.set_status("Trend data save failed.")
+                    messagebox.showerror("Save All Data", f"Failed to upload trend graph CSV: {exc}")
+                    self.set_status("Trend data upload failed.")
                 else:
-                    self.set_status("Trend data saved.")
-            fut = run_in_background(self.repo.save_trend_rows, all_rows)
-            fut.add_done_callback(on_trend_done)
+                    self.set_status("Trend data uploaded to Supabase bucket.")
+            fut = run_in_background(self.repo.upload_trend_csv, trend_graph_path, dest_key)
+            fut.add_done_callback(on_trend_upload_done)
         except Exception as e:
-            messagebox.showerror("Save All Data", f"Failed to save trend graph data: {e}")
-            self.set_status("Trend data save failed.")
+            logging.exception(f"Exception in export_csv: {e}")
+            messagebox.showerror("Save All Data", f"Failed to export or upload trend graph data: {e}")
+            self.set_status("Trend data export/upload failed.")
             return
 
         # --- Save heatmap arrays to Supabase (non-blocking) ---
@@ -956,7 +1124,7 @@ class SenxorApp(ttk.Frame):
             if not camera_name:
                 camera_name = f"Camera{i+1}"
             heatmap_row = {
-                "ts": datetime.utcnow(),
+                "ts": datetime.utcnow().isoformat(),
                 "sample_id": sample_id,
                 "camera_id": camera_name,
                 "heatmap": hv.last_frame.flatten().tolist(),
@@ -1005,14 +1173,14 @@ class SenxorApp(ttk.Frame):
                     hv.save_snapshot()
                     # Add snapshot row for Supabase
                     snapshot_rows.append({
-                        "ts": datetime.utcnow(),
+                        "ts": datetime.utcnow().isoformat(),
                         "sample_id": sample_id,
                         "camera_id": camera_name,
                         "file_type": "png",
                         "local_path": f"{sample_name_safe}_{camera_name_safe}.png"
                     })
                     snapshot_rows.append({
-                        "ts": datetime.utcnow(),
+                        "ts": datetime.utcnow().isoformat(),
                         "sample_id": sample_id,
                         "camera_id": camera_name,
                         "file_type": "csv",

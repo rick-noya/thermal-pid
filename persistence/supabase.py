@@ -67,4 +67,19 @@ class SupabaseRepository(DataRepository):
             response = self.client.table("camera_heatmaps").insert(payload).execute()
             print("Inserted heatmap rows to Supabase:", response)
         except Exception as e:
-            print(f"Error inserting heatmap rows to Supabase: {e}") 
+            print(f"Error inserting heatmap rows to Supabase: {e}")
+
+    def upload_trend_csv(self, local_path, dest_key):
+        """Upload a trend CSV file to the 'joule-heat-charts' bucket in Supabase Storage."""
+        if not local_path or not os.path.exists(local_path):
+            print(f"Trend CSV file not found: {local_path}")
+            return
+        bucket_name = "joule-heat-charts"
+        try:
+            with open(local_path, "rb") as f:
+                upload_resp = self.client.storage.from_(bucket_name).upload(dest_key, f, {
+                    "content-type": "text/csv"
+                })
+            print(f"Uploaded trend CSV {local_path} to bucket '{bucket_name}' as '{dest_key}': {upload_resp}")
+        except Exception as e:
+            print(f"Error uploading trend CSV {local_path} to Supabase Storage: {e}") 
