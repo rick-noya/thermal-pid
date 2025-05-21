@@ -33,6 +33,7 @@ import serial.tools.list_ports
 import tkinter.messagebox as messagebox
 from persistence import get_repo
 from datetime import datetime
+from persistence.utils import run_in_background
 
 
 class SettingsDialog(tk.Toplevel):
@@ -927,30 +928,18 @@ class SenxorApp(ttk.Frame):
             trend_graph_path = os.path.join(folder_name, trend_graph_filename)
             self.trend_graph.export_csv(sample_name=raw_sample_name, output_path=trend_graph_path)
 
-            # Save trend data to repository
-            all_rows = []
-            for dt_obj, mx, mn, av, v in zip(
-                self.trend_graph.time_data,
-                self.trend_graph.max_data,
-                self.trend_graph.min_data,
-                self.trend_graph.avg_data,
-                self.trend_graph.voltage_data
-            ):
-                all_rows.append({
-                    "ts": dt_obj,
-                    "max": mx,
-                    "min": mn,
-                    "avg": av,
-                    "voltage": v,
-                    "sample_name": raw_sample_name or None,
-                    "sample_id": sample_id
-                })
-            self.repo.save_trend_rows(all_rows)
+            # Save trend data to repository (non-blocking)
+            def on_trend_done(fut):
+                exc = fut.exception()
+                if exc:
+                    messagebox.showerror("Save All Data", f"Failed to save trend graph data: {exc}")
+            fut = run_in_background(self.repo.save_trend_rows, all_rows)
+            fut.add_done_callback(on_trend_done)
         except Exception as e:
             messagebox.showerror("Save All Data", f"Failed to save trend graph data: {e}")
             return
 
-        # --- Save heatmap arrays to Supabase ---
+        # --- Save heatmap arrays to Supabase (non-blocking) ---
         heatmap_rows = []
         for i, hv in enumerate(self.heatmap_views):
             if hv.last_frame is None:
@@ -975,7 +964,12 @@ class SenxorApp(ttk.Frame):
             }
             heatmap_rows.append(heatmap_row)
         if heatmap_rows:
-            self.repo.save_heatmaps(heatmap_rows)
+            def on_heatmap_done(fut):
+                exc = fut.exception()
+                if exc:
+                    messagebox.showerror("Save All Data", f"Failed to save heatmaps: {exc}")
+            fut = run_in_background(self.repo.save_heatmaps, heatmap_rows)
+            fut.add_done_callback(on_heatmap_done)
 
         # Save all camera snapshots
         num_saved = 0
@@ -1024,7 +1018,12 @@ class SenxorApp(ttk.Frame):
                     failed_cams.append(camera_name_safe)
                     failed_msgs.append(f"{camera_name_safe}: {e}")
             if snapshot_rows:
-                self.repo.save_snapshots(snapshot_rows)
+                def on_snapshots_done(fut):
+                    exc = fut.exception()
+                    if exc:
+                        messagebox.showerror("Save All Data", f"Failed to save snapshots: {exc}")
+                fut = run_in_background(self.repo.save_snapshots, snapshot_rows)
+                fut.add_done_callback(on_snapshots_done)
             if num_saved > 0 and not failed_cams:
                 messagebox.showinfo("Save All Data", f"Trend graph, heatmaps, and all camera snapshots saved in '{folder_name}'.")
             elif num_saved > 0 and failed_cams:
