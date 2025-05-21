@@ -145,7 +145,10 @@ def get_supabase_config():
     # Log the values for debugging (mask key)
     logging.basicConfig(level=logging.INFO)
     logging.info(f"SUPABASE_URL: {url}")
-    logging.info(f"SUPABASE_ANON_KEY: {key[:4]}...{key[-4:] if key else ''}")
+    if key:
+        logging.info(f"SUPABASE_ANON_KEY: {key[:4]}...{key[-4:]}")
+    else:
+        logging.info("SUPABASE_ANON_KEY: None")
     logging.info(f"SUPABASE_BUCKET: {bucket}")
     return {
         "url": url,
