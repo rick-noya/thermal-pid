@@ -130,6 +130,17 @@ _defaults_snapshot = dict(
     DEFAULT_TEST_STRATEGY=DEFAULT_TEST_STRATEGY,
 )
 
+# --- Supabase Config ---
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "snapshots")
+
+def get_supabase_config():
+    return {
+        "url": SUPABASE_URL,
+        "key": SUPABASE_KEY,
+        "bucket": SUPABASE_BUCKET,
+    }
 
 # ---------------------------------------------------------------------------
 # YAML loading helpers
