@@ -32,9 +32,10 @@ class SupabaseRepository(DataRepository):
             key = f"{r.get('sample_id','unknown')}/{r.get('camera_id','unknown')}/{os.path.basename(local_path)}"
             try:
                 with open(local_path, "rb") as f:
-                    upload_resp = self.client.storage.from_(self.bucket).upload(key, f, upsert=True)
+                    upload_resp = self.client.storage.from_(self.bucket).upload(key, f)
                 print(f"Uploaded {local_path} to bucket as {key}: {upload_resp}")
-                meta_row = dict(r)
+                # Remove local_path from metadata row
+                meta_row = {k: v for k, v in r.items() if k != "local_path"}
                 meta_row["storage_path"] = key
                 meta.append(meta_row)
             except Exception as e:
