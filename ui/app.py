@@ -567,8 +567,6 @@ class SenxorApp(ttk.Frame):
             except Exception:
                 self.pid.output_limits = (0, 5.5)  # fallback to config default
 
-        self.repo.save_trend_rows([{'test': 1}])
-
     def _on_canvas_configure(self, event):
         """Dynamically set the width of the inner frame to match the canvas width."""
         canvas_width = event.width

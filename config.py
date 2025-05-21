@@ -2,6 +2,7 @@
 
 import os
 from typing import Any, Dict, Tuple
+import logging
 
 try:
     import yaml  # type: ignore
@@ -131,15 +132,25 @@ _defaults_snapshot = dict(
 )
 
 # --- Supabase Config ---
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
-SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "snapshots")
 
 def get_supabase_config():
+    """
+    Fetch Supabase config from environment variables at runtime.
+    Ensures values are up-to-date and .env is loaded first.
+    Returns a dict with keys: url, key, bucket.
+    """
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_ANON_KEY")
+    bucket = os.getenv("SUPABASE_BUCKET", "snapshots")
+    # Log the values for debugging (mask key)
+    logging.basicConfig(level=logging.INFO)
+    logging.info(f"SUPABASE_URL: {url}")
+    logging.info(f"SUPABASE_ANON_KEY: {key[:4]}...{key[-4:] if key else ''}")
+    logging.info(f"SUPABASE_BUCKET: {bucket}")
     return {
-        "url": SUPABASE_URL,
-        "key": SUPABASE_KEY,
-        "bucket": SUPABASE_BUCKET,
+        "url": url,
+        "key": key,
+        "bucket": bucket,
     }
 
 # ---------------------------------------------------------------------------

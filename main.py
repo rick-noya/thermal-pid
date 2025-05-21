@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv()
 import tkinter as tk
 from tkinter import messagebox
 from devices.camera_manager import CameraManager
