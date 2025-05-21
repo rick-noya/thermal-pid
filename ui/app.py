@@ -914,6 +914,7 @@ class SenxorApp(ttk.Frame):
         sample_id = self.repo.get_sample_id_by_name(raw_sample_name)
         if not sample_id:
             messagebox.showerror("Save All Data", f"Sample name '{raw_sample_name}' not found in database.")
+            self.set_status("Save failed: sample not found.")
             return
 
         # Save trend graph data
@@ -927,16 +928,19 @@ class SenxorApp(ttk.Frame):
             trend_graph_filename = f"{sample_name_safe}_trend_graph.csv" if sample_name_safe else "trend_graph.csv"
             trend_graph_path = os.path.join(folder_name, trend_graph_filename)
             self.trend_graph.export_csv(sample_name=raw_sample_name, output_path=trend_graph_path)
-
-            # Save trend data to repository (non-blocking)
+            self.set_status("Saving trend data to Supabase…")
             def on_trend_done(fut):
                 exc = fut.exception()
                 if exc:
                     messagebox.showerror("Save All Data", f"Failed to save trend graph data: {exc}")
+                    self.set_status("Trend data save failed.")
+                else:
+                    self.set_status("Trend data saved.")
             fut = run_in_background(self.repo.save_trend_rows, all_rows)
             fut.add_done_callback(on_trend_done)
         except Exception as e:
             messagebox.showerror("Save All Data", f"Failed to save trend graph data: {e}")
+            self.set_status("Trend data save failed.")
             return
 
         # --- Save heatmap arrays to Supabase (non-blocking) ---
@@ -964,10 +968,14 @@ class SenxorApp(ttk.Frame):
             }
             heatmap_rows.append(heatmap_row)
         if heatmap_rows:
+            self.set_status("Saving heatmaps to Supabase…")
             def on_heatmap_done(fut):
                 exc = fut.exception()
                 if exc:
                     messagebox.showerror("Save All Data", f"Failed to save heatmaps: {exc}")
+                    self.set_status("Heatmap save failed.")
+                else:
+                    self.set_status("Heatmaps saved.")
             fut = run_in_background(self.repo.save_heatmaps, heatmap_rows)
             fut.add_done_callback(on_heatmap_done)
 
@@ -1018,10 +1026,14 @@ class SenxorApp(ttk.Frame):
                     failed_cams.append(camera_name_safe)
                     failed_msgs.append(f"{camera_name_safe}: {e}")
             if snapshot_rows:
+                self.set_status("Saving snapshots to Supabase…")
                 def on_snapshots_done(fut):
                     exc = fut.exception()
                     if exc:
                         messagebox.showerror("Save All Data", f"Failed to save snapshots: {exc}")
+                        self.set_status("Snapshot save failed.")
+                    else:
+                        self.set_status("Snapshots saved.")
                 fut = run_in_background(self.repo.save_snapshots, snapshot_rows)
                 fut.add_done_callback(on_snapshots_done)
             if num_saved > 0 and not failed_cams:
